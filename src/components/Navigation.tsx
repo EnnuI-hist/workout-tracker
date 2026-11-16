@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp, TabType } from '../context/AppContext';
-import { Dumbbell, TrendingUp, User, Settings, LucideIcon } from 'lucide-react';
+import { Dumbbell, Calendar, Layers, TrendingUp, User, LucideIcon } from 'lucide-react';
 
 export const Navigation: React.FC = () => {
   const { activeTab, setActiveTab, data } = useApp();
@@ -8,14 +8,15 @@ export const Navigation: React.FC = () => {
 
   const tabs: Array<{ id: TabType; label: string; icon: LucideIcon }> = [
     { id: 'workout', label: 'Тренировка', icon: Dumbbell },
-    { id: 'history', label: 'Прогресс', icon: TrendingUp },
-    { id: 'profile', label: 'Профиль', icon: User },
-    { id: 'settings', label: 'Настройки', icon: Settings }
+    { id: 'calendar', label: 'Календарь', icon: Calendar },
+    { id: 'templates', label: 'Шаблоны', icon: Layers },
+    { id: 'history', label: 'Статистика', icon: TrendingUp },
+    { id: 'profile', label: 'Профиль', icon: User }
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-30 bg-dark-950/90 backdrop-blur-xl border-t border-slate-800/80 pb-safe">
-      <div className="max-w-md mx-auto px-4 h-16 flex items-center justify-around">
+    <nav className="fixed bottom-0 left-0 right-0 z-30 bg-dark-950/95 backdrop-blur-xl border-t border-slate-800/80 pb-safe">
+      <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -30,12 +31,12 @@ export const Navigation: React.FC = () => {
               }`}
             >
               <div className="relative">
-                <Icon size={20} className={isActive ? 'stroke-[2.5]' : 'stroke-2'} />
+                <Icon size={19} className={isActive ? 'stroke-[2.5]' : 'stroke-2'} />
                 {showActiveWorkoutBadge && (
-                  <span className="absolute -top-1 -right-1.5 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                 )}
                 {showActiveWorkoutBadge && (
-                  <span className="absolute -top-1 -right-1.5 w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                  <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-emerald-500" />
                 )}
               </div>
               <span className={`text-[10px] font-semibold tracking-tight mt-1 ${

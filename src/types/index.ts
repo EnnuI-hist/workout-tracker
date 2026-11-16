@@ -18,6 +18,29 @@ export interface ExerciseDefinition {
   defaultRestSeconds?: number;
 }
 
+export interface TemplateExercise {
+  id: string; // unique item id inside template
+  exerciseId: string; // reference to ExerciseDefinition
+  name: string;
+  category: MuscleCategory;
+  targetSets: number;
+  minReps: number;
+  maxReps: number;
+  defaultRestSeconds?: number;
+  notes?: string;
+}
+
+export type TemplateType = 'day-a' | 'day-b' | 'custom';
+
+export interface WorkoutTemplate {
+  id: string;
+  name: string;
+  type: TemplateType;
+  color: string; // 'emerald' | 'sky' | 'purple' | 'amber'
+  description?: string;
+  exercises: TemplateExercise[];
+}
+
 export interface WorkoutSet {
   id: string;
   setNumber: number;
@@ -44,7 +67,9 @@ export interface WorkoutExercise {
 
 export interface WorkoutSession {
   id: string;
+  templateId?: string; // e.g. 'template-day-a' or 'template-day-b' or 'custom'
   title: string;
+  date: string; // YYYY-MM-DD
   startedAt: string;
   endedAt?: string;
   durationSeconds: number;
@@ -92,6 +117,7 @@ export interface AppData {
   version: number;
   profile: UserProfile;
   exercises: ExerciseDefinition[];
+  templates: WorkoutTemplate[];
   activeWorkout: WorkoutSession | null;
   workoutHistory: WorkoutSession[];
   settings: AppSettings;

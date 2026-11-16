@@ -22,11 +22,22 @@ import {
   ChevronDown, 
   ChevronUp, 
   Trash2, 
-  Target,
-  BarChart2,
-  Sparkles
+  Sparkles,
+  Layers,
+  Activity,
+  CheckCircle2,
+  Filter
 } from 'lucide-react';
-import { calculate1RM, calculateTonnage, formatDuration, formatTonnage } from '../utils/calculations';
+import { 
+  calculate1RM, 
+  calculateTonnage, 
+  formatDuration, 
+  formatTonnage,
+  checkProgression,
+  filterWorkoutsByPeriod,
+  calculatePeriodSummary,
+  StatsPeriod
+} from '../utils/calculations';
 
 // Register ChartJS modules
 ChartJS.register(
@@ -44,20 +55,23 @@ type MetricType = 'weight' | 'oneRM' | 'tonnage';
 
 export const ProgressHistoryView: React.FC = () => {
   const { data, deleteWorkoutFromHistory } = useApp();
+  const [selectedPeriod, setSelectedPeriod] = useState<StatsPeriod>('month');
   const [selectedExerciseId, setSelectedExerciseId] = useState<string>(
     data.exercises[0]?.id || 'lat-pulldown'
   );
   const [activeMetric, setActiveMetric] = useState<MetricType>('weight');
   const [expandedWorkoutId, setExpandedWorkoutId] = useState<string | null>(null);
+  const [progressionFilter, setProgressionFilter] = useState<'all' | 'ready'>('all');
 
-  const selectedExercise = useApp().data.exercises.find(e => e.id === selectedExerciseId) || data.exercises[0];
+  // Filtered workouts for period summary
+  const periodWorkouts = useMemo(() => {
+    return filterWorkoutsByPeriod(data.workoutHistory, selectedPeriod);
+  }, [data.workoutHistory, selectedPeriod]);
 
-  // Overall stats
-  const totalWorkouts = data.workoutHistory.length;
-  const totalAllTimeTonnage = data.workoutHistory.reduce((sum, w) => sum + w.totalTonnageKg, 0);
-  const averageDuration = totalWorkouts > 0 
-    ? Math.round(data.workoutHistory.reduce((sum, w) => sum + w.durationSeconds, 0) / totalWorkouts) 
-    : 0;
+  // Period summary stats
+  const periodSummary = useMemo(() => {
+    return calculatePeriodSummary(periodWorkouts, selectedPeriod);
+  }, [periodWorkouts, selectedPeriod]);
 
   // Process data for the selected exercise across all workouts (chronological order)
   const chartDataPoints = useMemo(() => {
@@ -70,7 +84,7 @@ export const ProgressHistoryView: React.FC = () => {
 
     // Chronological order: oldest to newest
     const chronologicalWorkouts = [...data.workoutHistory].sort(
-      (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+      (a, b) => new Date(a.date || a.startedAt).getTime() - new Date(b.date || b.startedAt).getTime()
     );
 
     chronologicalWorkouts.forEach(workout => {
@@ -82,7 +96,7 @@ export const ProgressHistoryView: React.FC = () => {
           const best1RM = Math.max(...completedSets.map(s => calculate1RM(s.weight, s.reps)));
           const tonnage = calculateTonnage(completedSets);
 
-          const dateLabel = new Date(workout.startedAt).toLocaleDateString('ru-RU', {
+          const dateLabel = new Date(workout.date || workout.startedAt).toLocaleDateString('ru-RU', {
             day: 'numeric',
             month: 'short'
           });
@@ -103,7 +117,7 @@ export const ProgressHistoryView: React.FC = () => {
   // Aggregate stats for this exercise
   const exerciseStats = useMemo(() => {
     if (chartDataPoints.length === 0) {
-      return { maxWeight: 0, best1RM: 0, totalVolume: 0, totalSets: 0 };
+      return { maxWeight: 0, best1RM: 0, totalVolume: 0 };
     }
     const maxWeight = Math.max(...chartDataPoints.map(p => p.maxWeight));
     const best1RM = Math.max(...chartDataPoints.map(p => p.best1RM));
@@ -111,14 +125,31 @@ export const ProgressHistoryView: React.FC = () => {
     return { maxWeight, best1RM, totalVolume };
   }, [chartDataPoints]);
 
+  // Evaluate progression for all exercises
+  const allExercisesProgression = useMemo(() => {
+    return data.exercises.map(ex => {
+      const prog = checkProgression(ex.id, ex.minReps, ex.maxReps, data.workoutHistory);
+      return {
+        exercise: ex,
+        progression: prog
+      };
+    });
+  }, [data.exercises, data.workoutHistory]);
+
+  const readyForProgressionCount = allExercisesProgression.filter(p => p.progression.isReady).length;
+
+  const filteredProgressionList = allExercisesProgression.filter(item => {
+    if (progressionFilter === 'ready') return item.progression.isReady;
+    return true;
+  });
+
   // Chart configuration
   const chartConfig = useMemo(() => {
     const labels = chartDataPoints.map(p => p.date);
     let values: number[] = [];
     let label = '';
     let color = '#10b981'; // emerald
-    let gradientFrom = 'rgba(16, 185, 129, 0.35)';
-    let gradientTo = 'rgba(16, 185, 129, 0.0)';
+    let gradientFrom = 'rgba(16, 185, 129, 0.4)';
 
     if (activeMetric === 'weight') {
       values = chartDataPoints.map(p => p.maxWeight);
@@ -162,9 +193,7 @@ export const ProgressHistoryView: React.FC = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        display: false
-      },
+      legend: { display: false },
       tooltip: {
         backgroundColor: '#0f172a',
         borderColor: '#334155',
@@ -176,11 +205,8 @@ export const ProgressHistoryView: React.FC = () => {
         callbacks: {
           label: (context) => {
             const val = context.parsed.y;
-            if (activeMetric === 'tonnage') {
-              return `Тоннаж: ${val} кг`;
-            } else if (activeMetric === 'oneRM') {
-              return `1ПМ: ${val} кг`;
-            }
+            if (activeMetric === 'tonnage') return `Тоннаж: ${val} кг`;
+            if (activeMetric === 'oneRM') return `1ПМ: ${val} кг`;
             return `Вес: ${val} кг`;
           }
         }
@@ -188,63 +214,163 @@ export const ProgressHistoryView: React.FC = () => {
     },
     scales: {
       x: {
-        grid: {
-          color: 'rgba(255, 255, 255, 0.05)'
-        },
-        ticks: {
-          color: '#94a3b8',
-          font: { size: 10 }
-        }
+        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+        ticks: { color: '#94a3b8', font: { size: 10 } }
       },
       y: {
-        grid: {
-          color: 'rgba(255, 255, 255, 0.05)'
-        },
-        ticks: {
-          color: '#94a3b8',
-          font: { size: 10 }
-        }
+        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+        ticks: { color: '#94a3b8', font: { size: 10 } }
       }
     }
   };
 
   return (
-    <div className="pb-28 pt-4 px-3 max-w-2xl mx-auto space-y-6">
+    <div className="pb-28 pt-3 px-3 max-w-2xl mx-auto space-y-6">
       {/* Title */}
       <div>
+        <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+          Аналитика прогресса
+        </span>
         <h1 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
-          <TrendingUp className="text-emerald-400" size={22} /> Прогресс и Аналитика
+          <TrendingUp className="text-emerald-400" size={22} /> Общая статистика
         </h1>
-        <p className="text-xs text-slate-400">История тренировок, силовые рекорды и графики 1ПМ</p>
+        <p className="text-xs text-slate-400">Сводка за период, динамика силовых и индикаторы прогрессии</p>
       </div>
 
-      {/* Global Stats Cards */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="p-3 rounded-2xl glass-panel border border-slate-800 text-center">
-          <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Тренировки</div>
-          <div className="text-lg font-black text-white font-mono">{totalWorkouts}</div>
-        </div>
-        <div className="p-3 rounded-2xl glass-panel border border-slate-800 text-center">
-          <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Всего тоннаж</div>
-          <div className="text-lg font-black text-emerald-400 font-mono">
-            {formatTonnage(totalAllTimeTonnage)}
+      {/* PERIOD SELECTOR & SUMMARY SECTION */}
+      <div className="rounded-3xl glass-panel p-4 border border-slate-800 space-y-3 shadow-xl">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-300">Период статистики:</span>
+
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-bold">
+            <button
+              onClick={() => setSelectedPeriod('month')}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                selectedPeriod === 'month'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Месяц
+            </button>
+            <button
+              onClick={() => setSelectedPeriod('year')}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                selectedPeriod === 'year'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Год
+            </button>
+            <button
+              onClick={() => setSelectedPeriod('all')}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                selectedPeriod === 'all'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Всё время
+            </button>
           </div>
         </div>
-        <div className="p-3 rounded-2xl glass-panel border border-slate-800 text-center">
-          <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Сред. время</div>
-          <div className="text-lg font-black text-amber-400 font-mono">
-            {formatDuration(averageDuration)}
+
+        {/* 4 Summary Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+          <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-center">
+            <div className="text-[10px] uppercase font-bold text-slate-400">Тренировки</div>
+            <div className="text-xl font-black text-white font-mono mt-0.5">
+              {periodSummary.workoutCount}
+            </div>
+          </div>
+          <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-center">
+            <div className="text-[10px] uppercase font-bold text-slate-400">Общий тоннаж</div>
+            <div className="text-xl font-black text-emerald-400 font-mono mt-0.5">
+              {formatTonnage(periodSummary.totalTonnage)}
+            </div>
+          </div>
+          <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-center">
+            <div className="text-[10px] uppercase font-bold text-slate-400">Частота</div>
+            <div className="text-sm font-bold text-sky-400 mt-1">
+              {periodSummary.frequencyPerWeek}
+            </div>
+          </div>
+          <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-center">
+            <div className="text-[10px] uppercase font-bold text-slate-400">Сред. время</div>
+            <div className="text-xl font-black text-amber-400 font-mono mt-0.5">
+              {periodSummary.avgDurationMins} <span className="text-xs font-normal text-slate-400">мин</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* EXERCISE PROGRESS SECTION */}
-      <div className="rounded-3xl glass-panel p-4 border border-slate-800 space-y-4">
-        <div className="flex items-center justify-between gap-2">
+      {/* SMART PROGRESSION STATUS SECTION */}
+      <div className="rounded-3xl glass-panel p-4 border border-slate-800 space-y-3 shadow-xl">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Trophy size={18} className="text-amber-400" />
-            <h2 className="text-base font-bold text-white">Прогресс по упражнению</h2>
+            <Sparkles size={18} className="text-emerald-400" />
+            <h2 className="text-base font-bold text-white">Индикаторы прогрессии</h2>
           </div>
+          <button
+            onClick={() => setProgressionFilter(progressionFilter === 'all' ? 'ready' : 'all')}
+            className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all ${
+              progressionFilter === 'ready'
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+            }`}
+          >
+            {progressionFilter === 'ready' ? '⚡ Только готовые' : `Все (${readyForProgressionCount} готовы)`}
+          </button>
+        </div>
+
+        <div className="space-y-2 max-h-72 overflow-y-auto no-scrollbar pt-1">
+          {filteredProgressionList.map(({ exercise, progression }) => (
+            <div
+              key={exercise.id}
+              className={`p-2.5 rounded-2xl border transition-all ${
+                progression.isReady
+                  ? 'bg-emerald-950/20 border-emerald-500/40'
+                  : 'bg-slate-900/70 border-slate-800/80'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                      {exercise.category}
+                    </span>
+                    <span className="text-xs text-slate-400 font-mono">
+                      Цель: {exercise.minReps}–{exercise.maxReps} повт.
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-white">{exercise.name}</h4>
+                </div>
+
+                {progression.isReady ? (
+                  <span className="px-2.5 py-1 rounded-xl bg-emerald-500 text-dark-950 text-[11px] font-black uppercase tracking-wide shadow-md flex items-center gap-1 flex-shrink-0">
+                    <Sparkles size={12} /> Готов к +весу
+                  </span>
+                ) : (
+                  <span className="px-2 py-1 rounded-xl bg-slate-800 text-slate-400 text-[10px] font-semibold flex-shrink-0">
+                    Закрепление
+                  </span>
+                )}
+              </div>
+
+              <div className="text-[11px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-800/60 line-clamp-2">
+                {progression.reason}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* EXERCISE PROGRESS CHART */}
+      <div className="rounded-3xl glass-panel p-4 border border-slate-800 space-y-4 shadow-xl">
+        <div className="flex items-center gap-2">
+          <Trophy size={18} className="text-amber-400" />
+          <h2 className="text-base font-bold text-white">График по упражнению</h2>
         </div>
 
         {/* Exercise Selector */}
@@ -253,7 +379,7 @@ export const ProgressHistoryView: React.FC = () => {
           <select
             value={selectedExerciseId}
             onChange={(e) => setSelectedExerciseId(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 font-medium"
+            className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-emerald-500"
           >
             {data.exercises.map((ex) => (
               <option key={ex.id} value={ex.id}>
@@ -265,19 +391,19 @@ export const ProgressHistoryView: React.FC = () => {
 
         {/* Selected Exercise Summary Stats */}
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800/80 text-center">
+          <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800 text-center">
             <div className="text-[10px] text-slate-400">Макс. вес</div>
             <div className="text-base font-bold text-emerald-400 font-mono mt-0.5">
               {exerciseStats.maxWeight} кг
             </div>
           </div>
-          <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800/80 text-center">
+          <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800 text-center">
             <div className="text-[10px] text-slate-400">Рекорд 1ПМ</div>
             <div className="text-base font-bold text-sky-400 font-mono mt-0.5">
               {exerciseStats.best1RM} кг
             </div>
           </div>
-          <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800/80 text-center">
+          <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800 text-center">
             <div className="text-[10px] text-slate-400">Объем</div>
             <div className="text-base font-bold text-amber-400 font-mono mt-0.5">
               {formatTonnage(exerciseStats.totalVolume)}
@@ -335,13 +461,13 @@ export const ProgressHistoryView: React.FC = () => {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <Calendar size={18} className="text-emerald-400" /> История тренировок ({data.workoutHistory.length})
+            <Calendar size={18} className="text-emerald-400" /> Все тренировки ({data.workoutHistory.length})
           </h2>
         </div>
 
         {data.workoutHistory.length === 0 ? (
           <div className="p-6 rounded-2xl glass-panel border border-slate-800 text-center text-xs text-slate-400">
-            История тренировок пуста. Начните первую тренировку во вкладке «Тренировка»!
+            История тренировок пуста. Начните первую тренировку во вкладке «Тренировка» или внесите в «Календаре»!
           </div>
         ) : (
           data.workoutHistory.map((workout) => {
@@ -350,6 +476,10 @@ export const ProgressHistoryView: React.FC = () => {
               (acc, e) => acc + e.sets.filter(s => s.completed).length,
               0
             );
+
+            const isDayA = workout.templateId === 'template-day-a' || workout.title.includes('День А');
+            const isDayB = workout.templateId === 'template-day-b' || workout.title.includes('День Б');
+            const badgeColor = isDayA ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : isDayB ? 'bg-sky-500/20 text-sky-300 border-sky-500/40' : 'bg-purple-500/20 text-purple-300 border-purple-500/40';
 
             return (
               <div
@@ -363,14 +493,17 @@ export const ProgressHistoryView: React.FC = () => {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="text-sm font-bold text-white">{workout.title}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">
-                        {new Date(workout.startedAt).toLocaleDateString('ru-RU', {
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${badgeColor}`}>
+                          {workout.title}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        {new Date(workout.date || workout.startedAt).toLocaleDateString('ru-RU', {
                           weekday: 'short',
                           day: 'numeric',
                           month: 'long',
-                          hour: '2-digit',
-                          minute: '2-digit'
+                          year: 'numeric'
                         })}
                       </div>
                     </div>
@@ -390,7 +523,7 @@ export const ProgressHistoryView: React.FC = () => {
                     <span>{workout.exercises.length} упражнений • {completedSetsCount} подходов</span>
                     <span className="flex items-center gap-1 text-emerald-400 font-medium">
                       {isExpanded ? (
-                        <>Скрыть детали <ChevronUp size={14} /></>
+                        <>Скрыть <ChevronUp size={14} /></>
                       ) : (
                         <>Подробнее <ChevronDown size={14} /></>
                       )}
@@ -441,7 +574,6 @@ export const ProgressHistoryView: React.FC = () => {
                       })}
                     </div>
 
-                    {/* Delete Workout Button */}
                     <div className="pt-2 flex justify-end">
                       <button
                         onClick={(e) => {

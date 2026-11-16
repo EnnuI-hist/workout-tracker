@@ -1,19 +1,35 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { AppData, WorkoutSession, WorkoutExercise, WorkoutSet, ExerciseDefinition, UserProfile, BodyMeasurements, AppSettings } from '../types';
+import { 
+  AppData, 
+  WorkoutSession, 
+  WorkoutExercise, 
+  WorkoutSet, 
+  ExerciseDefinition, 
+  UserProfile, 
+  BodyMeasurements, 
+  AppSettings,
+  WorkoutTemplate,
+  TemplateExercise
+} from '../types';
 import { loadAppData, saveAppData, exportDataAsJSON, importDataFromJSON, resetToDefaults } from '../utils/storage';
+import { DEFAULT_TEMPLATES } from '../utils/defaultData';
 import { checkProgression, getPreviousExerciseSets, calculateWorkoutTonnage } from '../utils/calculations';
 import { playTimerFinishSound, playSetCompleteSound, triggerVibration } from '../utils/audio';
 import confetti from 'canvas-confetti';
 
-export type TabType = 'workout' | 'history' | 'profile' | 'settings';
+export type TabType = 'workout' | 'calendar' | 'templates' | 'history' | 'profile';
 
 interface AppContextType {
   data: AppData;
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
 
-  // Active workout actions
-  startWorkout: () => void;
+  // Selected date for calendar
+  selectedCalendarDate: string;
+  setSelectedCalendarDate: (date: string) => void;
+
+  // Active live workout actions
+  startWorkout: (templateId?: string) => void;
   finishWorkout: () => void;
   cancelWorkout: () => void;
   addExerciseToActiveWorkout: (def: ExerciseDefinition) => void;
@@ -23,7 +39,18 @@ interface AppContextType {
   removeSet: (workoutExerciseId: string, setId: string) => void;
   updateSet: (workoutExerciseId: string, setId: string, updates: Partial<WorkoutSet>) => void;
   toggleSetComplete: (workoutExerciseId: string, setId: string) => void;
+  
+  // Calendar & History actions (save retroactive / custom workout)
+  saveWorkoutForDate: (workout: WorkoutSession) => void;
   deleteWorkoutFromHistory: (workoutId: string) => void;
+
+  // Template management actions
+  updateTemplate: (templateId: string, updates: Partial<WorkoutTemplate>) => void;
+  addExerciseToTemplate: (templateId: string, exercise: ExerciseDefinition) => void;
+  removeExerciseFromTemplate: (templateId: string, templateExerciseId: string) => void;
+  updateTemplateExercise: (templateId: string, templateExerciseId: string, updates: Partial<TemplateExercise>) => void;
+  reorderTemplateExercises: (templateId: string, fromIndex: number, toIndex: number) => void;
+  resetTemplateToDefault: (templateId: string) => void;
 
   // Rest Timer
   restTimerSeconds: number;
@@ -55,6 +82,9 @@ const AppContext = createContext<AppContextType | null>(null);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [data, setData] = useState<AppData>(() => loadAppData());
   const [activeTab, setActiveTab] = useState<TabType>('workout');
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
 
   // Rest Timer State
   const [restTimerSeconds, setRestTimerSeconds] = useState<number>(data.settings.defaultRestSeconds);
@@ -109,7 +139,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timerIntervalRef.current = window.setInterval(() => {
         setRestTimerSeconds(prev => {
           if (prev <= 1) {
-            // Timer finished!
             setIsRestTimerRunning(false);
             playTimerFinishSound(data.settings.soundEnabled);
             triggerVibration([300, 150, 300, 150, 500], data.settings.vibrationEnabled);
@@ -161,21 +190,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRestTimerVisible(true);
   }, [restTimerTotal]);
 
-  // Start new workout session from template
-  const startWorkout = useCallback(() => {
-    const newExercises: WorkoutExercise[] = data.exercises.map(ex => {
-      // Check progression & previous sets
-      const progression = checkProgression(ex.id, ex.minReps, ex.maxReps, data.workoutHistory);
-      const prevSets = getPreviousExerciseSets(ex.id, data.workoutHistory);
+  // Start new live workout session from chosen template
+  const startWorkout = useCallback((templateId?: string) => {
+    const targetTemplateId = templateId || 'template-day-a';
+    const template = data.templates.find(t => t.id === targetTemplateId) || data.templates[0];
 
-      // Create target sets with prefilled previous hints
-      const sets: WorkoutSet[] = Array.from({ length: ex.targetSets }, (_, i) => {
+    const newExercises: WorkoutExercise[] = template.exercises.map(tex => {
+      const progression = checkProgression(tex.exerciseId, tex.minReps, tex.maxReps, data.workoutHistory);
+      const prevSets = getPreviousExerciseSets(tex.exerciseId, data.workoutHistory);
+
+      const sets: WorkoutSet[] = Array.from({ length: tex.targetSets }, (_, i) => {
         const prevSet = prevSets && prevSets[i] ? prevSets[i] : (prevSets && prevSets[0] ? prevSets[0] : null);
         return {
-          id: `set-${Date.now()}-${ex.id}-${i + 1}`,
+          id: `set-${Date.now()}-${tex.exerciseId}-${i + 1}`,
           setNumber: i + 1,
           weight: data.settings.autoFillPreviousResults && prevSet ? prevSet.weight : 0,
-          reps: data.settings.autoFillPreviousResults && prevSet ? prevSet.reps : ex.minReps,
+          reps: data.settings.autoFillPreviousResults && prevSet ? prevSet.reps : tex.minReps,
           completed: false,
           previousWeight: prevSet ? prevSet.weight : undefined,
           previousReps: prevSet ? prevSet.reps : undefined
@@ -183,21 +213,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       return {
-        id: `we-${Date.now()}-${ex.id}`,
-        exerciseId: ex.id,
-        name: ex.name,
-        category: ex.category,
-        minReps: ex.minReps,
-        maxReps: ex.maxReps,
+        id: `we-${Date.now()}-${tex.exerciseId}`,
+        exerciseId: tex.exerciseId,
+        name: tex.name,
+        category: tex.category,
+        minReps: tex.minReps,
+        maxReps: tex.maxReps,
         sets,
         readyForProgression: progression.isReady,
         progressionReason: progression.reason
       };
     });
 
+    const todayDate = new Date().toISOString().split('T')[0];
     const newSession: WorkoutSession = {
       id: `session-${Date.now()}`,
-      title: 'Full-Body Силовая',
+      templateId: template.id,
+      title: template.name,
+      date: todayDate,
       startedAt: new Date().toISOString(),
       durationSeconds: 0,
       exercises: newExercises,
@@ -209,9 +242,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...prev,
       activeWorkout: newSession
     }));
-  }, [data.exercises, data.workoutHistory, data.settings]);
+    setActiveTab('workout');
+  }, [data.templates, data.workoutHistory, data.settings]);
 
-  // Finish active workout
+  // Finish active live workout
   const finishWorkout = useCallback(() => {
     if (!data.activeWorkout) return;
 
@@ -223,7 +257,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isCompleted: true
     };
 
-    // Confetti celebration!
     try {
       confetti({
         particleCount: 100,
@@ -234,11 +267,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // ignore
     }
 
-    setData(prev => ({
-      ...prev,
-      activeWorkout: null,
-      workoutHistory: [completedSession, ...prev.workoutHistory]
-    }));
+    setData(prev => {
+      // If a workout on the same day with same id exists, replace; else prepend
+      const filtered = prev.workoutHistory.filter(w => w.id !== completedSession.id);
+      const updatedHistory = [completedSession, ...filtered].sort(
+        (a, b) => new Date(b.date || b.startedAt).getTime() - new Date(a.date || a.startedAt).getTime()
+      );
+      return {
+        ...prev,
+        activeWorkout: null,
+        workoutHistory: updatedHistory
+      };
+    });
 
     setIsRestTimerRunning(false);
     setRestTimerVisible(false);
@@ -255,7 +295,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRestTimerVisible(false);
   }, []);
 
-  // Add exercise to active workout
+  // Add exercise to active live workout
   const addExerciseToActiveWorkout = useCallback((def: ExerciseDefinition) => {
     if (!data.activeWorkout) return;
 
@@ -299,7 +339,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [data.activeWorkout, data.workoutHistory]);
 
-  // Remove exercise from active workout
   const removeExerciseFromActiveWorkout = useCallback((workoutExerciseId: string) => {
     setData(prev => {
       if (!prev.activeWorkout) return prev;
@@ -313,7 +352,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
-  // Reorder exercises in active workout
   const reorderExercises = useCallback((fromIndex: number, toIndex: number) => {
     setData(prev => {
       if (!prev.activeWorkout) return prev;
@@ -333,7 +371,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
-  // Add set to exercise in active workout
   const addSet = useCallback((workoutExerciseId: string) => {
     setData(prev => {
       if (!prev.activeWorkout) return prev;
@@ -364,14 +401,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
-  // Remove set from exercise in active workout
   const removeSet = useCallback((workoutExerciseId: string, setId: string) => {
     setData(prev => {
       if (!prev.activeWorkout) return prev;
       const updatedExercises = prev.activeWorkout.exercises.map(ex => {
         if (ex.id !== workoutExerciseId) return ex;
         const filtered = ex.sets.filter(s => s.id !== setId);
-        // Renumber sets
         const renumbered = filtered.map((s, idx) => ({ ...s, setNumber: idx + 1 }));
         return {
           ...ex,
@@ -388,7 +423,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
-  // Update set values
   const updateSet = useCallback((workoutExerciseId: string, setId: string, updates: Partial<WorkoutSet>) => {
     setData(prev => {
       if (!prev.activeWorkout) return prev;
@@ -409,7 +443,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
-  // Toggle set completed checkbox
   const toggleSetComplete = useCallback((workoutExerciseId: string, setId: string) => {
     setData(prev => {
       if (!prev.activeWorkout) return prev;
@@ -422,9 +455,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           sets: ex.sets.map(s => {
             if (s.id === setId) {
               const nextState = !s.completed;
-              if (nextState) {
-                newlyCompleted = true;
-              }
+              if (nextState) newlyCompleted = true;
               return {
                 ...s,
                 completed: nextState,
@@ -457,6 +488,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [startRestTimer]);
 
+  // Calendar / Retroactive workout save
+  const saveWorkoutForDate = useCallback((workout: WorkoutSession) => {
+    const tonnage = calculateWorkoutTonnage(workout.exercises);
+    const sessionToSave: WorkoutSession = {
+      ...workout,
+      totalTonnageKg: tonnage,
+      isCompleted: true
+    };
+
+    setData(prev => {
+      // Remove any existing workout with same ID
+      const filtered = prev.workoutHistory.filter(w => w.id !== sessionToSave.id);
+      const updated = [sessionToSave, ...filtered].sort(
+        (a, b) => new Date(b.date || b.startedAt).getTime() - new Date(a.date || a.startedAt).getTime()
+      );
+      return {
+        ...prev,
+        workoutHistory: updated
+      };
+    });
+  }, []);
+
   // Delete workout from history
   const deleteWorkoutFromHistory = useCallback((workoutId: string) => {
     setData(prev => ({
@@ -465,7 +518,97 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, []);
 
-  // Profile management
+  // Template management actions
+  const updateTemplate = useCallback((templateId: string, updates: Partial<WorkoutTemplate>) => {
+    setData(prev => ({
+      ...prev,
+      templates: prev.templates.map(t => (t.id === templateId ? { ...t, ...updates } : t))
+    }));
+  }, []);
+
+  const addExerciseToTemplate = useCallback((templateId: string, exercise: ExerciseDefinition) => {
+    setData(prev => {
+      const template = prev.templates.find(t => t.id === templateId);
+      if (!template) return prev;
+
+      const newTemplateEx: TemplateExercise = {
+        id: `te-${Date.now()}-${exercise.id}`,
+        exerciseId: exercise.id,
+        name: exercise.name,
+        category: exercise.category,
+        targetSets: exercise.targetSets,
+        minReps: exercise.minReps,
+        maxReps: exercise.maxReps,
+        defaultRestSeconds: exercise.defaultRestSeconds || 90
+      };
+
+      return {
+        ...prev,
+        templates: prev.templates.map(t =>
+          t.id === templateId ? { ...t, exercises: [...t.exercises, newTemplateEx] } : t
+        )
+      };
+    });
+  }, []);
+
+  const removeExerciseFromTemplate = useCallback((templateId: string, templateExerciseId: string) => {
+    setData(prev => ({
+      ...prev,
+      templates: prev.templates.map(t =>
+        t.id === templateId
+          ? { ...t, exercises: t.exercises.filter(e => e.id !== templateExerciseId) }
+          : t
+      )
+    }));
+  }, []);
+
+  const updateTemplateExercise = useCallback(
+    (templateId: string, templateExerciseId: string, updates: Partial<TemplateExercise>) => {
+      setData(prev => ({
+        ...prev,
+        templates: prev.templates.map(t =>
+          t.id === templateId
+            ? {
+                ...t,
+                exercises: t.exercises.map(e => (e.id === templateExerciseId ? { ...e, ...updates } : e))
+              }
+            : t
+        )
+      }));
+    },
+    []
+  );
+
+  const reorderTemplateExercises = useCallback((templateId: string, fromIndex: number, toIndex: number) => {
+    setData(prev => {
+      const template = prev.templates.find(t => t.id === templateId);
+      if (!template) return prev;
+
+      const list = [...template.exercises];
+      if (fromIndex < 0 || fromIndex >= list.length || toIndex < 0 || toIndex >= list.length) {
+        return prev;
+      }
+      const [moved] = list.splice(fromIndex, 1);
+      list.splice(toIndex, 0, moved);
+
+      return {
+        ...prev,
+        templates: prev.templates.map(t => (t.id === templateId ? { ...t, exercises: list } : t))
+      };
+    });
+  }, []);
+
+  const resetTemplateToDefault = useCallback((templateId: string) => {
+    const defaultTemplate = DEFAULT_TEMPLATES.find(t => t.id === templateId);
+    if (!defaultTemplate) return;
+
+    setData(prev => ({
+      ...prev,
+      templates: prev.templates.map(t => (t.id === templateId ? JSON.parse(JSON.stringify(defaultTemplate)) : t))
+    }));
+  }, []);
+
+  // Profile actions
   const updateProfile = useCallback((profileUpdates: Partial<UserProfile>) => {
     setData(prev => ({
       ...prev,
@@ -572,6 +715,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         data,
         activeTab,
         setActiveTab,
+        selectedCalendarDate,
+        setSelectedCalendarDate,
         startWorkout,
         finishWorkout,
         cancelWorkout,
@@ -582,7 +727,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         removeSet,
         updateSet,
         toggleSetComplete,
+        saveWorkoutForDate,
         deleteWorkoutFromHistory,
+        updateTemplate,
+        addExerciseToTemplate,
+        removeExerciseFromTemplate,
+        updateTemplateExercise,
+        reorderTemplateExercises,
+        resetTemplateToDefault,
         restTimerSeconds,
         restTimerTotal,
         isRestTimerRunning,

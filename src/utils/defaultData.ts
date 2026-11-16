@@ -1,4 +1,4 @@
-import { ExerciseDefinition, AppData, WorkoutSession } from '../types';
+import { ExerciseDefinition, AppData, WorkoutSession, WorkoutTemplate } from '../types';
 
 export const DEFAULT_EXERCISES: ExerciseDefinition[] = [
   {
@@ -33,7 +33,7 @@ export const DEFAULT_EXERCISES: ExerciseDefinition[] = [
   },
   {
     id: 'pec-deck-fly',
-    name: 'Сведение рук в тренажере / Бабочка',
+    name: 'Бабочка (сведение рук)',
     targetSets: 2,
     minReps: 8,
     maxReps: 12,
@@ -43,27 +43,27 @@ export const DEFAULT_EXERCISES: ExerciseDefinition[] = [
   },
   {
     id: 'leg-curl',
-    name: 'Сгибание ног лежа/сидя',
+    name: 'Сгибание ног',
     targetSets: 3,
     minReps: 8,
     maxReps: 12,
     category: 'Ноги',
-    description: 'Бицепс бедра, фиксация таза, без рывков поясницей',
+    description: 'Бицепс бедра лежа/сидя, фиксация таза, без рывков поясницей',
     defaultRestSeconds: 90
   },
   {
     id: 'leg-extension',
-    name: 'Разгибание ног сидя',
+    name: 'Разгибание ног',
     targetSets: 3,
     minReps: 8,
     maxReps: 12,
     category: 'Ноги',
-    description: 'Квадрицепс, пауза в верхней точке, медленное подконтрольное опускание',
+    description: 'Квадрицепс сидя, пауза в верхней точке, медленное опускание',
     defaultRestSeconds: 75
   },
   {
     id: 'scott-curl',
-    name: 'Сгибание рук на скамье Скотта',
+    name: 'Бицепс на скамье Скотта',
     targetSets: 2,
     minReps: 6,
     maxReps: 12,
@@ -73,7 +73,7 @@ export const DEFAULT_EXERCISES: ExerciseDefinition[] = [
   },
   {
     id: 'triceps-dips',
-    name: 'Отжимания на брусьях на трицепс',
+    name: 'Брусья на трицепс',
     targetSets: 2,
     minReps: 6,
     maxReps: 10,
@@ -83,53 +83,100 @@ export const DEFAULT_EXERCISES: ExerciseDefinition[] = [
   },
   {
     id: 'upright-row',
-    name: 'Протяжка / тяга к подбородку на среднюю дельту',
+    name: 'Протяжка на средние дельты',
     targetSets: 4,
     minReps: 10,
     maxReps: 15,
     category: 'Плечи',
-    description: 'Хват чуть шире плеч, подъем локтями вверх через стороны',
+    description: 'Хват чуть шире плеч, тяга к подбородку локтями вверх через стороны',
     defaultRestSeconds: 60
   },
   {
     id: 'ab-crunches',
-    name: 'Скручивания на пресс',
+    name: 'Скручивания',
     targetSets: 3,
     minReps: 10,
     maxReps: 20,
     category: 'Пресс',
-    description: 'Скручивание грудной клетки к тазу, поясница прижата',
+    description: 'Скручивание грудной клетки к тазу на римском стуле или коврике',
     defaultRestSeconds: 60
   },
   {
     id: 'rear-delt-fly',
-    name: 'Обратная бабочка на заднюю дельту',
+    name: 'Задние дельты на обратной бабочке',
     targetSets: 2,
     minReps: 10,
     maxReps: 15,
     category: 'Плечи',
-    description: 'Разведение через локти, задний пучок дельт, без включения трапеций',
+    description: 'Разведение через локти в тренажере пек-дек назад, задний пучок дельт',
     defaultRestSeconds: 60
   },
   {
     id: 'hammer-curl',
-    name: 'Сгибание рук на брахиалис / молотки',
+    name: 'Брахиалис (молотки)',
     targetSets: 2,
     minReps: 6,
     maxReps: 10,
     category: 'Руки',
-    description: 'Нейтральный хват (ладони друг к другу), брахиалис и плечелучевая',
+    description: 'Сгибание рук нейтральным хватом (ладони друг к другу)',
     defaultRestSeconds: 75
   },
   {
     id: 'overhead-triceps-ext',
-    name: 'Разгибание рук на трицепс в кроссовере из-за головы',
+    name: 'Разгибание в блоке из-за головы',
     targetSets: 2,
     minReps: 6,
     maxReps: 12,
     category: 'Руки',
-    description: 'Длинная головка трицепса, канатная рукоять, локти зафиксированы',
+    description: 'Длинная головка трицепса в кроссовере, канатная рукоять',
     defaultRestSeconds: 75
+  }
+];
+
+export const DEFAULT_TEMPLATES: WorkoutTemplate[] = [
+  {
+    id: 'template-day-a',
+    name: 'Full-Body: День А',
+    type: 'day-a',
+    color: 'emerald',
+    description: 'Базовый протокол Full-Body: акцент на вертикальные тяги, наклонный жим и квадрицепс',
+    exercises: [
+      { id: 'te-a-1', exerciseId: 'lat-pulldown', name: 'Тяга верхнего блока', category: 'Спина', targetSets: 3, minReps: 6, maxReps: 10, defaultRestSeconds: 90 },
+      { id: 'te-a-2', exerciseId: 'incline-db-press', name: 'Жим гантелей на наклонной скамье', category: 'Грудь', targetSets: 2, minReps: 6, maxReps: 10, defaultRestSeconds: 120 },
+      { id: 'te-a-3', exerciseId: 'hammer-row', name: 'Тяга в тренажере Хаммер', category: 'Спина', targetSets: 3, minReps: 6, maxReps: 12, defaultRestSeconds: 90 },
+      { id: 'te-a-4', exerciseId: 'pec-deck-fly', name: 'Бабочка (сведение рук)', category: 'Грудь', targetSets: 2, minReps: 8, maxReps: 12, defaultRestSeconds: 75 },
+      { id: 'te-a-5', exerciseId: 'leg-curl', name: 'Сгибание ног', category: 'Ноги', targetSets: 3, minReps: 8, maxReps: 12, defaultRestSeconds: 90 },
+      { id: 'te-a-6', exerciseId: 'leg-extension', name: 'Разгибание ног', category: 'Ноги', targetSets: 3, minReps: 8, maxReps: 12, defaultRestSeconds: 75 },
+      { id: 'te-a-7', exerciseId: 'scott-curl', name: 'Бицепс на скамье Скотта', category: 'Руки', targetSets: 2, minReps: 6, maxReps: 12, defaultRestSeconds: 75 },
+      { id: 'te-a-8', exerciseId: 'triceps-dips', name: 'Брусья на трицепс', category: 'Руки', targetSets: 2, minReps: 6, maxReps: 10, defaultRestSeconds: 90 },
+      { id: 'te-a-9', exerciseId: 'upright-row', name: 'Протяжка на средние дельты', category: 'Плечи', targetSets: 4, minReps: 10, maxReps: 15, defaultRestSeconds: 60 },
+      { id: 'te-a-10', exerciseId: 'ab-crunches', name: 'Скручивания', category: 'Пресс', targetSets: 3, minReps: 10, maxReps: 20, defaultRestSeconds: 60 },
+      { id: 'te-a-11', exerciseId: 'rear-delt-fly', name: 'Задние дельты на обратной бабочке', category: 'Плечи', targetSets: 2, minReps: 10, maxReps: 15, defaultRestSeconds: 60 },
+      { id: 'te-a-12', exerciseId: 'hammer-curl', name: 'Брахиалис (молотки)', category: 'Руки', targetSets: 2, minReps: 6, maxReps: 10, defaultRestSeconds: 75 },
+      { id: 'te-a-13', exerciseId: 'overhead-triceps-ext', name: 'Разгибание в блоке из-за головы', category: 'Руки', targetSets: 2, minReps: 6, maxReps: 12, defaultRestSeconds: 75 }
+    ]
+  },
+  {
+    id: 'template-day-b',
+    name: 'Full-Body: День Б',
+    type: 'day-b',
+    color: 'sky',
+    description: 'Второй протокол Full-Body: редактируемая вариация подходов и повторений',
+    exercises: [
+      { id: 'te-b-1', exerciseId: 'lat-pulldown', name: 'Тяга верхнего блока', category: 'Спина', targetSets: 3, minReps: 6, maxReps: 10, defaultRestSeconds: 90 },
+      { id: 'te-b-2', exerciseId: 'incline-db-press', name: 'Жим гантелей на наклонной скамье', category: 'Грудь', targetSets: 3, minReps: 6, maxReps: 10, defaultRestSeconds: 120 },
+      { id: 'te-b-3', exerciseId: 'hammer-row', name: 'Тяга в тренажере Хаммер', category: 'Спина', targetSets: 3, minReps: 8, maxReps: 12, defaultRestSeconds: 90 },
+      { id: 'te-b-4', exerciseId: 'pec-deck-fly', name: 'Бабочка (сведение рук)', category: 'Грудь', targetSets: 3, minReps: 8, maxReps: 12, defaultRestSeconds: 75 },
+      { id: 'te-b-5', exerciseId: 'leg-curl', name: 'Сгибание ног', category: 'Ноги', targetSets: 3, minReps: 8, maxReps: 12, defaultRestSeconds: 90 },
+      { id: 'te-b-6', exerciseId: 'leg-extension', name: 'Разгибание ног', category: 'Ноги', targetSets: 3, minReps: 8, maxReps: 12, defaultRestSeconds: 75 },
+      { id: 'te-b-7', exerciseId: 'scott-curl', name: 'Бицепс на скамье Скотта', category: 'Руки', targetSets: 3, minReps: 6, maxReps: 12, defaultRestSeconds: 75 },
+      { id: 'te-b-8', exerciseId: 'triceps-dips', name: 'Брусья на трицепс', category: 'Руки', targetSets: 3, minReps: 6, maxReps: 10, defaultRestSeconds: 90 },
+      { id: 'te-b-9', exerciseId: 'upright-row', name: 'Протяжка на средние дельты', category: 'Плечи', targetSets: 4, minReps: 10, maxReps: 15, defaultRestSeconds: 60 },
+      { id: 'te-b-10', exerciseId: 'ab-crunches', name: 'Скручивания', category: 'Пресс', targetSets: 3, minReps: 10, maxReps: 20, defaultRestSeconds: 60 },
+      { id: 'te-b-11', exerciseId: 'rear-delt-fly', name: 'Задние дельты на обратной бабочке', category: 'Плечи', targetSets: 3, minReps: 10, maxReps: 15, defaultRestSeconds: 60 },
+      { id: 'te-b-12', exerciseId: 'hammer-curl', name: 'Брахиалис (молотки)', category: 'Руки', targetSets: 2, minReps: 6, maxReps: 10, defaultRestSeconds: 75 },
+      { id: 'te-b-13', exerciseId: 'overhead-triceps-ext', name: 'Разгибание в блоке из-за головы', category: 'Руки', targetSets: 2, minReps: 6, maxReps: 12, defaultRestSeconds: 75 }
+    ]
   }
 ];
 
@@ -150,12 +197,14 @@ const getPastDateTime = (daysAgo: number, hour: number = 18): string => {
 export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
   {
     id: 'session-demo-1',
-    title: 'Full-Body Силовая (Прошлая неделя)',
+    templateId: 'template-day-a',
+    title: 'Full-Body: День А',
+    date: getPastDate(7),
     startedAt: getPastDateTime(7, 18),
     endedAt: getPastDateTime(7, 19),
     durationSeconds: 3420, // 57 min
     totalTonnageKg: 8940,
-    notes: 'Отличная тренировка, размялся как следует. Хаммер зашел легко.',
+    notes: 'Отличная тренировка Дня А, размялся как следует. Хаммер зашел легко.',
     isCompleted: true,
     exercises: [
       {
@@ -199,7 +248,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-1-4',
         exerciseId: 'pec-deck-fly',
-        name: 'Сведение рук в тренажере / Бабочка',
+        name: 'Бабочка (сведение рук)',
         category: 'Грудь',
         minReps: 8,
         maxReps: 12,
@@ -211,7 +260,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-1-5',
         exerciseId: 'leg-curl',
-        name: 'Сгибание ног лежа/сидя',
+        name: 'Сгибание ног',
         category: 'Ноги',
         minReps: 8,
         maxReps: 12,
@@ -224,7 +273,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-1-6',
         exerciseId: 'leg-extension',
-        name: 'Разгибание ног сидя',
+        name: 'Разгибание ног',
         category: 'Ноги',
         minReps: 8,
         maxReps: 12,
@@ -237,7 +286,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-1-7',
         exerciseId: 'scott-curl',
-        name: 'Сгибание рук на скамье Скотта',
+        name: 'Бицепс на скамье Скотта',
         category: 'Руки',
         minReps: 6,
         maxReps: 12,
@@ -249,7 +298,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-1-8',
         exerciseId: 'triceps-dips',
-        name: 'Отжимания на брусьях на трицепс',
+        name: 'Брусья на трицепс',
         category: 'Руки',
         minReps: 6,
         maxReps: 10,
@@ -261,7 +310,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-1-9',
         exerciseId: 'upright-row',
-        name: 'Протяжка / тяга к подбородку на среднюю дельту',
+        name: 'Протяжка на средние дельты',
         category: 'Плечи',
         minReps: 10,
         maxReps: 15,
@@ -275,7 +324,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-1-10',
         exerciseId: 'ab-crunches',
-        name: 'Скручивания на пресс',
+        name: 'Скручивания',
         category: 'Пресс',
         minReps: 10,
         maxReps: 20,
@@ -288,7 +337,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-1-11',
         exerciseId: 'rear-delt-fly',
-        name: 'Обратная бабочка на заднюю дельту',
+        name: 'Задние дельты на обратной бабочке',
         category: 'Плечи',
         minReps: 10,
         maxReps: 15,
@@ -300,7 +349,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-1-12',
         exerciseId: 'hammer-curl',
-        name: 'Сгибание рук на брахиалис / молотки',
+        name: 'Брахиалис (молотки)',
         category: 'Руки',
         minReps: 6,
         maxReps: 10,
@@ -312,7 +361,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-1-13',
         exerciseId: 'overhead-triceps-ext',
-        name: 'Разгибание рук на трицепс в кроссовере из-за головы',
+        name: 'Разгибание в блоке из-за головы',
         category: 'Руки',
         minReps: 6,
         maxReps: 12,
@@ -325,12 +374,14 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
   },
   {
     id: 'session-demo-2',
-    title: 'Full-Body Силовая (Предыдущая)',
+    templateId: 'template-day-b',
+    title: 'Full-Body: День Б',
+    date: getPastDate(3),
     startedAt: getPastDateTime(3, 19),
     endedAt: getPastDateTime(3, 20),
     durationSeconds: 3600, // 60 min
     totalTonnageKg: 9480,
-    notes: 'Тяга верхнего блока и сгибания ног пошли с запасом — пора повышать!',
+    notes: 'Тренировка Дня Б: тяга верхнего блока и сгибания ног пошли с запасом — пора повышать!',
     isCompleted: true,
     exercises: [
       {
@@ -374,7 +425,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-2-4',
         exerciseId: 'pec-deck-fly',
-        name: 'Сведение рук в тренажере / Бабочка',
+        name: 'Бабочка (сведение рук)',
         category: 'Грудь',
         minReps: 8,
         maxReps: 12,
@@ -386,7 +437,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-2-5',
         exerciseId: 'leg-curl',
-        name: 'Сгибание ног лежа/сидя',
+        name: 'Сгибание ног',
         category: 'Ноги',
         minReps: 8,
         maxReps: 12,
@@ -399,7 +450,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-2-6',
         exerciseId: 'leg-extension',
-        name: 'Разгибание ног сидя',
+        name: 'Разгибание ног',
         category: 'Ноги',
         minReps: 8,
         maxReps: 12,
@@ -412,7 +463,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-2-7',
         exerciseId: 'scott-curl',
-        name: 'Сгибание рук на скамье Скотта',
+        name: 'Бицепс на скамье Скотта',
         category: 'Руки',
         minReps: 6,
         maxReps: 12,
@@ -424,7 +475,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-2-8',
         exerciseId: 'triceps-dips',
-        name: 'Отжимания на брусьях на трицепс',
+        name: 'Брусья на трицепс',
         category: 'Руки',
         minReps: 6,
         maxReps: 10,
@@ -436,7 +487,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-2-9',
         exerciseId: 'upright-row',
-        name: 'Протяжка / тяга к подбородку на среднюю дельту',
+        name: 'Протяжка на средние дельты',
         category: 'Плечи',
         minReps: 10,
         maxReps: 15,
@@ -450,7 +501,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-2-10',
         exerciseId: 'ab-crunches',
-        name: 'Скручивания на пресс',
+        name: 'Скручивания',
         category: 'Пресс',
         minReps: 10,
         maxReps: 20,
@@ -463,7 +514,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-2-11',
         exerciseId: 'rear-delt-fly',
-        name: 'Обратная бабочка на заднюю дельту',
+        name: 'Задние дельты на обратной бабочке',
         category: 'Плечи',
         minReps: 10,
         maxReps: 15,
@@ -475,7 +526,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-2-12',
         exerciseId: 'hammer-curl',
-        name: 'Сгибание рук на брахиалис / молотки',
+        name: 'Брахиалис (молотки)',
         category: 'Руки',
         minReps: 6,
         maxReps: 10,
@@ -487,7 +538,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
       {
         id: 'we-demo-2-13',
         exerciseId: 'overhead-triceps-ext',
-        name: 'Разгибание рук на трицепс в кроссовере из-за головы',
+        name: 'Разгибание в блоке из-за головы',
         category: 'Руки',
         minReps: 6,
         maxReps: 12,
@@ -501,7 +552,7 @@ export const SAMPLE_WORKOUT_HISTORY: WorkoutSession[] = [
 ];
 
 export const INITIAL_APP_DATA: AppData = {
-  version: 1,
+  version: 2,
   profile: {
     name: 'Атлет',
     currentWeight: 79.4,
@@ -519,6 +570,7 @@ export const INITIAL_APP_DATA: AppData = {
     ]
   },
   exercises: DEFAULT_EXERCISES,
+  templates: DEFAULT_TEMPLATES,
   activeWorkout: null,
   workoutHistory: SAMPLE_WORKOUT_HISTORY,
   settings: {

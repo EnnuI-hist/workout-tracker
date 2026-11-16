@@ -7,7 +7,6 @@ import { WorkoutSession, WorkoutSet, WorkoutExercise } from '../types';
 export function calculate1RM(weight: number, reps: number): number {
   if (weight <= 0 || reps <= 0) return 0;
   if (reps === 1) return weight;
-  // Epley formula
   const epley = weight * (1 + reps / 30);
   return Math.round(epley * 10) / 10;
 }
@@ -34,6 +33,8 @@ export interface ProgressionCheckResult {
   previousSets?: WorkoutSet[];
   previousWorkoutDate?: string;
   recommendedWeightIncrease?: string;
+  lastMaxWeight?: number;
+  lastReps?: number;
 }
 
 /**
@@ -52,7 +53,7 @@ export function checkProgression(
   // Sort workouts newest first
   const sorted = [...workoutHistory]
     .filter(w => w.isCompleted)
-    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+    .sort((a, b) => new Date(b.date || b.startedAt).getTime() - new Date(a.date || a.startedAt).getTime());
 
   // Find the most recent workout where this exercise was performed with completed sets
   for (const session of sorted) {
@@ -68,7 +69,7 @@ export function checkProgression(
     const remainingSets = completedSets.slice(1);
     const remainingInTarget = remainingSets.every(s => s.reps >= minReps);
 
-    const prevDateStr = new Date(session.startedAt).toLocaleDateString('ru-RU', {
+    const prevDateStr = new Date(session.date || session.startedAt).toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'short'
     });
@@ -80,7 +81,9 @@ export function checkProgression(
         reason: `В прошлый раз (${prevDateStr}): 1-й подход достиг цели (${firstSet.reps} из ${maxReps} повт.), остальные в диапазоне (${setsDesc}). Пора повысить рабочий вес на +1–2.5 кг!`,
         previousSets: completedSets,
         previousWorkoutDate: prevDateStr,
-        recommendedWeightIncrease: '+1.25 – 2.5 кг'
+        recommendedWeightIncrease: '+1.25 – 2.5 кг',
+        lastMaxWeight: Math.max(...completedSets.map(s => s.weight)),
+        lastReps: firstSet.reps
       };
     } else {
       let failDetail = '';
@@ -95,7 +98,9 @@ export function checkProgression(
         isReady: false,
         reason: `В прошлый раз (${prevDateStr}): ${failDetail}. Закрепите текущий вес в диапазоне ${minReps}–${maxReps}.`,
         previousSets: completedSets,
-        previousWorkoutDate: prevDateStr
+        previousWorkoutDate: prevDateStr,
+        lastMaxWeight: Math.max(...completedSets.map(s => s.weight)),
+        lastReps: firstSet.reps
       };
     }
   }
@@ -115,7 +120,7 @@ export function getPreviousExerciseSets(
 ): WorkoutSet[] | null {
   const sorted = [...workoutHistory]
     .filter(w => w.isCompleted)
-    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+    .sort((a, b) => new Date(b.date || b.startedAt).getTime() - new Date(a.date || a.startedAt).getTime());
 
   for (const session of sorted) {
     const matchedEx = session.exercises.find(e => e.exerciseId === exerciseId);
@@ -145,4 +150,70 @@ export function formatTonnage(kg: number): string {
     return `${(kg / 1000).toFixed(1)} т`;
   }
   return `${Math.round(kg)} кг`;
+}
+
+export type StatsPeriod = 'month' | 'year' | 'all';
+
+export function filterWorkoutsByPeriod(workouts: WorkoutSession[], period: StatsPeriod): WorkoutSession[] {
+  if (period === 'all') return workouts;
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  return workouts.filter(w => {
+    const wDate = new Date(w.date || w.startedAt);
+    if (period === 'year') {
+      return wDate.getFullYear() === currentYear;
+    }
+    if (period === 'month') {
+      return wDate.getFullYear() === currentYear && wDate.getMonth() === currentMonth;
+    }
+    return true;
+  });
+}
+
+export interface PeriodSummaryStats {
+  workoutCount: number;
+  totalTonnage: number;
+  avgDurationMins: number;
+  frequencyPerWeek: string;
+}
+
+export function calculatePeriodSummary(workouts: WorkoutSession[], period: StatsPeriod): PeriodSummaryStats {
+  const count = workouts.length;
+  const totalTonnage = workouts.reduce((sum, w) => sum + w.totalTonnageKg, 0);
+  const totalDuration = workouts.reduce((sum, w) => sum + w.durationSeconds, 0);
+  const avgDurationMins = count > 0 ? Math.round(totalDuration / count / 60) : 0;
+
+  let weeksInPeriod = 4.3;
+  if (period === 'year') {
+    const now = new Date();
+    // Weeks elapsed this year
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const daysElapsed = Math.max(7, Math.ceil((now.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24)));
+    weeksInPeriod = daysElapsed / 7;
+  } else if (period === 'month') {
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    weeksInPeriod = daysInMonth / 7;
+  } else {
+    // All time
+    if (workouts.length >= 2) {
+      const dates = workouts.map(w => new Date(w.date || w.startedAt).getTime()).sort();
+      const spanDays = Math.max(7, Math.ceil((dates[dates.length - 1] - dates[0]) / (1000 * 60 * 60 * 24)));
+      weeksInPeriod = spanDays / 7;
+    } else {
+      weeksInPeriod = 1;
+    }
+  }
+
+  const freq = count > 0 ? (count / weeksInPeriod).toFixed(1) : '0';
+
+  return {
+    workoutCount: count,
+    totalTonnage,
+    avgDurationMins,
+    frequencyPerWeek: `${freq} тр./нед`
+  };
 }
