@@ -1,564 +1,754 @@
-import React, { useState } from 'react';
-import { useApp } from '../context/AppContext';
-import { 
-  Check, 
-  Plus, 
-  Trash2, 
-  ArrowUp, 
-  ArrowDown, 
-  Clock, 
-  Flame, 
-  Sparkles, 
-  TrendingUp, 
-  AlertCircle, 
-  ChevronRight,
-  Info,
-  Timer as TimerIcon
+import {
+  ArrowUpRight,
+  Check,
+  Clock,
+  Dumbbell,
+  Flame,
+  History,
+  Play,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Timer,
+  Trash2,
+  X,
 } from 'lucide-react';
-import { formatDuration, formatTonnage, calculateWorkoutTonnage } from '../utils/calculations';
-import { ExerciseDefinition } from '../types';
+import { useEffect, useMemo, useState } from 'react';
+import type {
+  ActiveWorkoutDraft,
+  WeightStep,
+  WorkoutExercise,
+  WorkoutSession,
+  WorkoutTemplate,
+} from '../types/workout.ts';
+import {
+  calculateExerciseTonnage,
+  calculateSessionTonnage,
+  evaluateDoubleProgression,
+  findPreviousExercisePerformance,
+  formatNumber,
+  formatShortDate,
+  generateId,
+  getTodayISODate,
+} from '../utils/calculations.ts';
+import { ExercisePickerModal, type PickedExerciseConfig } from './ExercisePickerModal.tsx';
+import { StepperInput } from './StepperInput.tsx';
 
-export const ActiveWorkoutView: React.FC = () => {
-  const {
-    data,
-    finishWorkout,
-    cancelWorkout,
-    removeExerciseFromActiveWorkout,
-    reorderExercises,
-    addSet,
-    removeSet,
-    updateSet,
-    toggleSetComplete,
-    addExerciseToActiveWorkout,
-    startRestTimer
-  } = useApp();
+interface ActiveWorkoutViewProps {
+  draft: ActiveWorkoutDraft | null;
+  templates: WorkoutTemplate[];
+  sessions: WorkoutSession[];
+  defaultWeightStep: WeightStep;
+  onChangeWeightStep: (step: WeightStep) => void;
+  onStartFromTemplate: (template: WorkoutTemplate) => void;
+  onStartEmpty: () => void;
+  onUpdateDraft: (draft: ActiveWorkoutDraft) => void;
+  onFinishWorkout: () => void;
+  onDiscardWorkout: () => void;
+  onLoadDemoData: () => void;
+  onGoToTemplates: () => void;
+}
 
-  const workout = data.activeWorkout;
-  const [showAddModal, setShowAddModal] = useState<boolean>(false);
-  const [showCancelModal, setShowCancelModal] = useState<boolean>(false);
-  const [showFinishModal, setShowFinishModal] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('Все');
-  const [infoModalContent, setInfoModalContent] = useState<string | null>(null);
+export function ActiveWorkoutView({
+  draft,
+  templates,
+  sessions,
+  defaultWeightStep,
+  onChangeWeightStep,
+  onStartFromTemplate,
+  onStartEmpty,
+  onUpdateDraft,
+  onFinishWorkout,
+  onDiscardWorkout,
+  onLoadDemoData,
+  onGoToTemplates,
+}: ActiveWorkoutViewProps) {
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [restRemaining, setRestRemaining] = useState<number | null>(null);
 
-  if (!workout) return null;
+  useEffect(() => {
+    if (!draft) return;
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [draft]);
 
-  const currentTonnage = calculateWorkoutTonnage(workout.exercises);
-  const totalCompletedSets = workout.exercises.reduce(
-    (acc, ex) => acc + ex.sets.filter(s => s.completed).length,
+  const elapsedSeconds = draft
+    ? Math.max(0, Math.floor((nowMs - new Date(draft.startedAt).getTime()) / 1000))
+    : 0;
+
+  useEffect(() => {
+    if (restRemaining === null || restRemaining <= 0) return;
+    const timer = window.setInterval(() => {
+      setRestRemaining((prev) => (prev !== null && prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [restRemaining]);
+
+  const formatTimer = (totalSec: number) => {
+    const hrs = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+    if (hrs > 0) {
+      return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  // Map previous exercise performances by exercise id in the active draft
+  const previousMap = useMemo(() => {
+    const result = new Map<
+      string,
+      { date: string; sets: Array<{ weight: number; reps: number }> }
+    >();
+    if (!draft) return result;
+
+    for (const ex of draft.exercises) {
+      const prev = findPreviousExercisePerformance(sessions, ex.name);
+      if (prev) {
+        result.set(ex.id, prev);
+      }
+    }
+    return result;
+  }, [draft, sessions]);
+
+  const lastPerformedByTemplate = useMemo(() => {
+    const map = new Map<string, string>();
+    const sorted = [...sessions].sort((a, b) => b.date.localeCompare(a.date));
+    for (const s of sorted) {
+      if (s.templateId && !map.has(s.templateId)) {
+        map.set(s.templateId, s.date);
+      }
+    }
+    return map;
+  }, [sessions]);
+
+  if (!draft) {
+    return (
+      <div className="space-y-6">
+        {/* Hero launch card */}
+        <section className="rounded-2xl bg-gradient-to-br from-[#161c2a] via-[#131824] to-[#0f141e] border border-slate-800/90 p-5 sm:p-6 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs font-medium">
+                <Flame className="w-3.5 h-3.5" />
+                Готов к залу
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                Начать тренировку
+              </h2>
+              <p className="text-sm text-slate-400">
+                Выберите программу ниже или запустите свободную тренировку с нуля.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={onStartEmpty}
+              className="h-12 px-5 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 transition shrink-0"
+            >
+              <Play className="w-4 h-4 fill-current" />
+              Пустая тренировка
+            </button>
+          </div>
+        </section>
+
+        {/* Demo data callout if user has no history yet */}
+        {sessions.length === 0 && (
+          <section className="rounded-2xl bg-emerald-500/10 border border-emerald-500/25 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-emerald-200">
+                  История тренировок пока пуста
+                </h3>
+                <p className="text-xs text-emerald-200/75 mt-0.5 leading-relaxed">
+                  Загрузите демо-историю за 4 недели (12 тренировок Full-Body A/B/C), чтобы сразу
+                  увидеть подсказки «Прошлый раз», индикаторы прогрессии и графики.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onLoadDemoData}
+              className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold whitespace-nowrap transition shrink-0"
+            >
+              Загрузить демо-данные
+            </button>
+          </section>
+        )}
+
+        {/* Templates list */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+              Ваши шаблоны программ
+            </h3>
+            <button
+              type="button"
+              onClick={onGoToTemplates}
+              className="text-xs font-medium text-blue-400 hover:text-blue-300 transition"
+            >
+              Управлять шаблонами →
+            </button>
+          </div>
+
+          {templates.length === 0 ? (
+            <div className="rounded-2xl bg-[#141822] border border-dashed border-slate-800 p-8 text-center space-y-3">
+              <p className="text-sm text-slate-400">У вас пока нет шаблонов тренировок.</p>
+              <button
+                type="button"
+                onClick={onGoToTemplates}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm font-medium text-white transition"
+              >
+                <Plus className="w-4 h-4" />
+                Создать шаблон
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {templates.map((tpl) => {
+                const lastDate = lastPerformedByTemplate.get(tpl.id);
+                return (
+                  <div
+                    key={tpl.id}
+                    className="rounded-2xl bg-[#141822] border border-slate-800/90 hover:border-slate-700 p-4 flex flex-col justify-between gap-4 transition"
+                  >
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <h4 className="text-base font-bold text-white">{tpl.name}</h4>
+                          {tpl.description && (
+                            <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">
+                              {tpl.description}
+                            </p>
+                          )}
+                        </div>
+                        <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-[11px] font-medium shrink-0">
+                          {tpl.exercises.length} упр.
+                        </span>
+                      </div>
+
+                      <div className="space-y-1 pt-1">
+                        {tpl.exercises.slice(0, 4).map((ex) => (
+                          <div
+                            key={ex.id}
+                            className="flex items-center justify-between text-xs text-slate-300/90"
+                          >
+                            <span className="truncate pr-2">{ex.name}</span>
+                            <span className="text-slate-500 tabular-nums shrink-0">
+                              {ex.targetSets}×{ex.targetRepMin}-{ex.targetRepMax}
+                            </span>
+                          </div>
+                        ))}
+                        {tpl.exercises.length > 4 && (
+                          <p className="text-[11px] text-slate-500">
+                            + ещё {tpl.exercises.length - 4} упр.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                        <History className="w-3.5 h-3.5" />
+                        {lastDate ? `Посл.: ${formatShortDate(lastDate)}` : 'Ещё не выполнялась'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onStartFromTemplate(tpl)}
+                        className="h-10 px-4 rounded-xl bg-blue-600/90 hover:bg-blue-500 active:scale-95 text-white text-xs font-semibold flex items-center gap-1.5 transition"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        Старт
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  // Active workout mode
+  const totalTonnage = calculateSessionTonnage(draft);
+  const completedSetsTotal = draft.exercises.reduce(
+    (sum, ex) => sum + ex.sets.filter((s) => s.completed && s.reps > 0).length,
     0
   );
-  const totalSets = workout.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
+  const totalSetsCount = draft.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
 
-  // Available exercises to add
-  const existingExIds = new Set(workout.exercises.map(e => e.exerciseId));
-  const availableToAdd = data.exercises.filter(e => {
-    const matchesSearch = e.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'Все' || e.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const updateExercise = (exId: string, updater: (ex: WorkoutExercise) => WorkoutExercise) => {
+    onUpdateDraft({
+      ...draft,
+      exercises: draft.exercises.map((ex) => (ex.id === exId ? updater(ex) : ex)),
+    });
+  };
 
-  const categories = ['Все', 'Спина', 'Грудь', 'Ноги', 'Плечи', 'Руки', 'Пресс'];
+  const handleAddExercise = (config: PickedExerciseConfig) => {
+    const prev = findPreviousExercisePerformance(sessions, config.name);
+    const sets = Array.from({ length: config.targetSets }, (_, idx) => {
+      const prevSet = prev?.sets[idx] ?? prev?.sets[prev.sets.length - 1];
+      return {
+        id: generateId(),
+        weight: prevSet ? prevSet.weight : 20,
+        reps: prevSet ? prevSet.reps : config.targetRepMin,
+        completed: false,
+      };
+    });
+
+    const newExercise: WorkoutExercise = {
+      id: generateId(),
+      name: config.name,
+      muscleGroup: config.muscleGroup,
+      targetSets: config.targetSets,
+      targetRepMin: config.targetRepMin,
+      targetRepMax: config.targetRepMax,
+      sets,
+    };
+
+    onUpdateDraft({
+      ...draft,
+      exercises: [...draft.exercises, newExercise],
+    });
+  };
+
+  const handleRemoveExercise = (exId: string) => {
+    onUpdateDraft({
+      ...draft,
+      exercises: draft.exercises.filter((ex) => ex.id !== exId),
+    });
+  };
+
+  const handleAddSet = (exId: string) => {
+    updateExercise(exId, (ex) => {
+      const lastSet = ex.sets[ex.sets.length - 1];
+      return {
+        ...ex,
+        sets: [
+          ...ex.sets,
+          {
+            id: generateId(),
+            weight: lastSet ? lastSet.weight : 20,
+            reps: lastSet ? lastSet.reps : ex.targetRepMin ?? 10,
+            completed: false,
+          },
+        ],
+      };
+    });
+  };
+
+  const handleRemoveSet = (exId: string, setId: string) => {
+    updateExercise(exId, (ex) => ({
+      ...ex,
+      sets: ex.sets.filter((s) => s.id !== setId),
+    }));
+  };
+
+  const handleUpdateSet = (
+    exId: string,
+    setId: string,
+    patch: Partial<{ weight: number; reps: number; completed: boolean }>
+  ) => {
+    updateExercise(exId, (ex) => ({
+      ...ex,
+      sets: ex.sets.map((s) => (s.id === setId ? { ...s, ...patch } : s)),
+    }));
+  };
+
+  const handleToggleSetCompleted = (exId: string, setId: string, currentCompleted: boolean) => {
+    handleUpdateSet(exId, setId, { completed: !currentCompleted });
+    if (!currentCompleted) {
+      setRestRemaining(90);
+    }
+  };
 
   return (
-    <div className="pb-36 pt-2 px-3 max-w-2xl mx-auto">
-      {/* Sticky Top Status Bar */}
-      <div className="sticky top-0 z-30 mb-4 pt-2 pb-3 bg-dark-950/95 backdrop-blur-md border-b border-slate-800/80">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <h1 className="text-lg font-bold text-white tracking-tight">{workout.title}</h1>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-slate-400 mt-0.5">
-              <span className="flex items-center gap-1 font-mono">
-                <Clock size={13} className="text-emerald-400" />
-                {formatDuration(workout.durationSeconds)}
-              </span>
-              <span>•</span>
-              <span className="flex items-center gap-1">
-                <Flame size={13} className="text-amber-400" />
-                {formatTonnage(currentTonnage)}
-              </span>
-              <span>•</span>
-              <span>{totalCompletedSets}/{totalSets} подходов</span>
-            </div>
+    <div className="space-y-4 pb-6">
+      {/* Sticky Active Workout Header */}
+      <div className="sticky top-[57px] md:top-[65px] z-20 rounded-2xl bg-[#141924]/95 backdrop-blur-md border border-slate-800 shadow-xl p-3.5 sm:p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+            <input
+              type="text"
+              value={draft.name}
+              onChange={(e) => onUpdateDraft({ ...draft, name: e.target.value })}
+              aria-label="Название тренировки"
+              className="bg-transparent text-base sm:text-lg font-bold text-white outline-none border-b border-transparent focus:border-blue-500 truncate min-w-[120px] flex-1"
+            />
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowCancelModal(true)}
-              className="px-2.5 py-1.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg transition-colors"
-            >
-              Отмена
-            </button>
-            <button
-              onClick={() => setShowFinishModal(true)}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-emerald-950/50 transition-all flex items-center gap-1.5"
-            >
-              <Check size={15} /> Завершить
-            </button>
-          </div>
-        </div>
-
-        {/* Progress meter */}
-        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-emerald-500 transition-all duration-300"
-            style={{ width: `${totalSets > 0 ? (totalCompletedSets / totalSets) * 100 : 0}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Exercises List */}
-      <div className="space-y-4">
-        {workout.exercises.map((ex, exIndex) => (
-          <div 
-            key={ex.id}
-            className={`rounded-2xl glass-panel p-3.5 transition-all duration-200 border ${
-              ex.readyForProgression ? 'border-emerald-500/40 bg-emerald-950/10' : 'border-slate-800'
-            }`}
-          >
-            {/* Exercise Header */}
-            <div className="flex items-start justify-between gap-2 mb-3">
-              <div className="flex-1">
-                <div className="flex items-center flex-wrap gap-2 mb-1">
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium">
-                    {ex.category}
-                  </span>
-                  <span className="text-xs text-slate-400 font-mono">
-                    Цель: {ex.minReps}–{ex.maxReps} повт.
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-white leading-snug">
-                  {exIndex + 1}. {ex.name}
-                </h3>
-              </div>
-
-              {/* Move up/down & delete exercise */}
-              <div className="flex items-center gap-0.5">
-                <button
-                  onClick={() => reorderExercises(exIndex, exIndex - 1)}
-                  disabled={exIndex === 0}
-                  className="p-1.5 text-slate-400 hover:text-white disabled:opacity-20 rounded-lg hover:bg-slate-800 transition-colors"
-                  title="Поднять выше"
-                >
-                  <ArrowUp size={16} />
-                </button>
-                <button
-                  onClick={() => reorderExercises(exIndex, exIndex + 1)}
-                  disabled={exIndex === workout.exercises.length - 1}
-                  className="p-1.5 text-slate-400 hover:text-white disabled:opacity-20 rounded-lg hover:bg-slate-800 transition-colors"
-                  title="Опустить ниже"
-                >
-                  <ArrowDown size={16} />
-                </button>
-                <button
-                  onClick={() => removeExerciseFromActiveWorkout(ex.id)}
-                  className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition-colors"
-                  title="Удалить упражнение"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* Smart Progression Badge if ready */}
-            {ex.readyForProgression && (
-              <div 
-                onClick={() => setInfoModalContent(ex.progressionReason || 'Отличный прогресс на прошлой тренировке!')}
-                className="mb-3.5 p-2.5 rounded-xl bg-gradient-to-r from-emerald-950/70 via-emerald-900/40 to-slate-900 border border-emerald-500/50 flex items-center justify-between cursor-pointer hover:border-emerald-400 transition-all shadow-sm"
+          <div className="flex items-center gap-2 shrink-0">
+            {!confirmDiscard ? (
+              <button
+                type="button"
+                onClick={() => setConfirmDiscard(true)}
+                className="h-9 px-3 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 text-xs font-medium transition"
               >
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-emerald-500 text-dark-950">
-                    <Sparkles size={15} className="animate-spin text-dark-950" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-emerald-300 tracking-wide uppercase flex items-center gap-1">
-                      ⚡ Пора повысить вес
-                    </div>
-                    <div className="text-[11px] text-slate-300 line-clamp-1">
-                      {ex.progressionReason}
-                    </div>
-                  </div>
-                </div>
-                <Info size={15} className="text-emerald-400 flex-shrink-0 ml-2" />
+                Отмена
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-rose-500/15 border border-rose-500/30 rounded-xl px-2 py-1">
+                <span className="text-[11px] text-rose-200 px-1">Сбросить?</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmDiscard(false);
+                    setRestRemaining(null);
+                    onDiscardWorkout();
+                  }}
+                  className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-semibold"
+                >
+                  Да
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDiscard(false)}
+                  className="px-2 py-1 rounded-lg bg-slate-800 text-slate-300 text-[11px]"
+                >
+                  Нет
+                </button>
               </div>
             )}
 
-            {/* Sets Header */}
-            <div className="grid grid-cols-12 gap-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-1">
-              <div className="col-span-1 text-center">Сет</div>
-              <div className="col-span-4 text-center">Вес (кг)</div>
-              <div className="col-span-4 text-center">Повторения</div>
-              <div className="col-span-3 text-center">Выполнено</div>
-            </div>
-
-            {/* Sets rows */}
-            <div className="space-y-2">
-              {ex.sets.map((set) => {
-                const isOverMax = set.reps >= ex.maxReps && set.completed;
-                return (
-                  <div 
-                    key={set.id}
-                    className={`rounded-xl p-2 transition-all border ${
-                      set.completed 
-                        ? 'bg-emerald-950/20 border-emerald-500/30' 
-                        : 'bg-slate-900/80 border-slate-800/80 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="grid grid-cols-12 gap-2 items-center">
-                      {/* Set Number */}
-                      <div className="col-span-1 text-center font-bold text-sm text-slate-300">
-                        {set.setNumber}
-                      </div>
-
-                      {/* Weight Control */}
-                      <div className="col-span-4">
-                        <div className="flex items-center justify-center bg-slate-950/80 border border-slate-800 rounded-lg overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={() => updateSet(ex.id, set.id, { weight: Math.max(0, set.weight - 2.5) })}
-                            className="px-2 py-2 text-slate-400 hover:text-white hover:bg-slate-800 active:bg-slate-700 font-bold text-sm select-none"
-                          >
-                            -
-                          </button>
-                          <input
-                            type="number"
-                            step="0.5"
-                            value={set.weight === 0 ? '' : set.weight}
-                            placeholder="0"
-                            onChange={(e) => updateSet(ex.id, set.id, { weight: parseFloat(e.target.value) || 0 })}
-                            className="w-full text-center bg-transparent py-1.5 text-sm font-bold text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => updateSet(ex.id, set.id, { weight: set.weight + 2.5 })}
-                            className="px-2 py-2 text-slate-400 hover:text-white hover:bg-slate-800 active:bg-slate-700 font-bold text-sm select-none"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Reps Control */}
-                      <div className="col-span-4">
-                        <div className="flex items-center justify-center bg-slate-950/80 border border-slate-800 rounded-lg overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={() => updateSet(ex.id, set.id, { reps: Math.max(0, set.reps - 1) })}
-                            className="px-2 py-2 text-slate-400 hover:text-white hover:bg-slate-800 active:bg-slate-700 font-bold text-sm select-none"
-                          >
-                            -
-                          </button>
-                          <input
-                            type="number"
-                            value={set.reps === 0 ? '' : set.reps}
-                            placeholder="0"
-                            onChange={(e) => updateSet(ex.id, set.id, { reps: parseInt(e.target.value, 10) || 0 })}
-                            className="w-full text-center bg-transparent py-1.5 text-sm font-bold text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => updateSet(ex.id, set.id, { reps: set.reps + 1 })}
-                            className="px-2 py-2 text-slate-400 hover:text-white hover:bg-slate-800 active:bg-slate-700 font-bold text-sm select-none"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Checkbox button */}
-                      <div className="col-span-3 flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => toggleSetComplete(ex.id, set.id)}
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                            set.completed
-                              ? 'bg-emerald-500 text-dark-950 shadow-lg shadow-emerald-500/30'
-                              : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700'
-                          }`}
-                        >
-                          <Check size={20} className={set.completed ? 'stroke-[3]' : 'stroke-2'} />
-                        </button>
-
-                        {/* Delete set button if sets > 1 */}
-                        {ex.sets.length > 1 && (
-                          <button
-                            onClick={() => removeSet(ex.id, set.id)}
-                            className="p-1 text-slate-600 hover:text-rose-400 text-xs"
-                            title="Удалить подход"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Hint with previous results */}
-                    {set.previousWeight !== undefined && set.previousReps !== undefined && (
-                      <div className="mt-1.5 px-2 flex items-center justify-between text-[11px] text-slate-400">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            updateSet(ex.id, set.id, {
-                              weight: set.previousWeight,
-                              reps: set.previousReps
-                            });
-                          }}
-                          className="hover:text-emerald-400 underline decoration-dotted transition-colors text-left"
-                          title="Нажмите, чтобы скопировать результат"
-                        >
-                          Прошлый раз: <span className="text-slate-300 font-semibold">{set.previousWeight} кг × {set.previousReps} повт.</span>
-                        </button>
-
-                        {isOverMax && (
-                          <span className="text-[10px] text-emerald-400 font-semibold">
-                            Верхняя граница достигнута!
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Set Actions: Add Set, Quick Rest Timer */}
-            <div className="mt-3 flex items-center justify-between pt-2 border-t border-slate-800/80">
-              <button
-                type="button"
-                onClick={() => addSet(ex.id)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition-colors"
-              >
-                <Plus size={14} /> Добавить подход
-              </button>
-
-              <button
-                type="button"
-                onClick={() => startRestTimer(90)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-800 text-emerald-400 rounded-lg text-xs font-medium transition-colors"
-              >
-                <TimerIcon size={14} /> Отдых (90с)
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmDiscard(false);
+                setRestRemaining(null);
+                onFinishWorkout();
+              }}
+              disabled={completedSetsTotal === 0}
+              className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs sm:text-sm font-semibold flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 transition"
+            >
+              <Check className="w-4 h-4" />
+              Завершить
+            </button>
           </div>
-        ))}
-      </div>
+        </div>
 
-      {/* Add Exercise Floating / Bottom Button */}
-      <div className="mt-6 mb-8 text-center">
-        <button
-          type="button"
-          onClick={() => setShowAddModal(true)}
-          className="w-full py-3.5 px-4 rounded-2xl border-2 border-dashed border-slate-800 hover:border-emerald-500/50 bg-slate-900/40 hover:bg-slate-900/80 text-slate-300 hover:text-emerald-400 font-semibold text-sm transition-all flex items-center justify-center gap-2"
-        >
-          <Plus size={18} /> Добавить упражнение в тренировку
-        </button>
-      </div>
+        {/* Metrics & Quick Controls Row */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2.5 text-slate-300">
+            <span className="inline-flex items-center gap-1 bg-[#0b0e14] border border-slate-800 px-2.5 py-1 rounded-lg tabular-nums">
+              <Clock className="w-3.5 h-3.5 text-blue-400" />
+              {formatTimer(elapsedSeconds)}
+            </span>
+            <span className="inline-flex items-center gap-1 bg-[#0b0e14] border border-slate-800 px-2.5 py-1 rounded-lg tabular-nums">
+              Подходы:{' '}
+              <strong className="text-white">
+                {completedSetsTotal}/{totalSetsCount}
+              </strong>
+            </span>
+            <span className="inline-flex items-center gap-1 bg-[#0b0e14] border border-slate-800 px-2.5 py-1 rounded-lg tabular-nums">
+              Тоннаж: <strong className="text-blue-300">{formatNumber(totalTonnage)} кг</strong>
+            </span>
+          </div>
 
-      {/* Floating Finish Bottom Bar */}
-      <div className="fixed bottom-20 left-0 right-0 px-4 max-w-md mx-auto z-20 pointer-events-none">
-        <button
-          type="button"
-          onClick={() => setShowFinishModal(true)}
-          className="pointer-events-auto w-full py-3.5 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-sm shadow-xl shadow-emerald-950/70 border border-emerald-400/40 flex items-center justify-between transition-all"
-        >
           <div className="flex items-center gap-2">
-            <Check size={18} className="stroke-[3]" />
-            <span>Завершить тренировку</span>
+            {/* Weight step toggle */}
+            <div className="inline-flex items-center rounded-lg bg-[#0b0e14] border border-slate-800 p-0.5">
+              <span className="text-[11px] text-slate-500 px-1.5 hidden sm:inline">Шаг:</span>
+              {([1.25, 2.5] as const).map((step) => (
+                <button
+                  key={step}
+                  type="button"
+                  onClick={() => onChangeWeightStep(step)}
+                  className={`px-2 py-1 rounded-md text-[11px] font-semibold transition ${
+                    defaultWeightStep === step
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  ±{step} кг
+                </button>
+              ))}
+            </div>
+
+            {/* Rest Timer Pill */}
+            {restRemaining !== null && restRemaining > 0 ? (
+              <button
+                type="button"
+                onClick={() => setRestRemaining(null)}
+                title="Нажмите, чтобы остановить таймер отдыха"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-300 font-semibold tabular-nums"
+              >
+                <Timer className="w-3.5 h-3.5 animate-pulse" />
+                Отдых {formatTimer(restRemaining)}
+                <X className="w-3 h-3 opacity-70" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setRestRemaining(90)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0b0e14] border border-slate-800 text-slate-300 hover:text-white transition"
+              >
+                <Timer className="w-3.5 h-3.5 text-slate-400" />
+                {restRemaining === 0 ? 'Отдых окончен!' : 'Таймер 90с'}
+              </button>
+            )}
           </div>
-          <span className="text-xs bg-emerald-700/80 px-2.5 py-1 rounded-lg font-mono">
-            {formatTonnage(currentTonnage)}
-          </span>
-        </button>
+        </div>
       </div>
 
-      {/* ADD EXERCISE MODAL */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-dark-900 border border-slate-800 w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
-            {/* Modal Header */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-white">Добавить упражнение</h3>
-                <p className="text-xs text-slate-400">Выберите из базы или создайте новое</p>
-              </div>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center hover:text-white"
+      {/* Date row */}
+      <div className="flex items-center justify-between px-1 text-xs text-slate-400">
+        <span>Дата тренировки:</span>
+        <input
+          type="date"
+          value={draft.date || getTodayISODate()}
+          onChange={(e) => onUpdateDraft({ ...draft, date: e.target.value })}
+          className="bg-[#141822] border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-200 outline-none focus:border-blue-500"
+        />
+      </div>
+
+      {/* Exercises List */}
+      {draft.exercises.length === 0 ? (
+        <div className="rounded-2xl bg-[#141822] border border-dashed border-slate-800 p-8 text-center space-y-3">
+          <Dumbbell className="w-8 h-8 text-slate-600 mx-auto" />
+          <p className="text-sm text-slate-400">
+            Добавьте первое упражнение, чтобы начать запись подходов.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {draft.exercises.map((exercise) => {
+            const prev = previousMap.get(exercise.id);
+            const progression = evaluateDoubleProgression(exercise);
+            const exTonnage = calculateExerciseTonnage(exercise);
+
+            return (
+              <article
+                key={exercise.id}
+                className={`rounded-2xl bg-[#141822] border transition-colors p-4 space-y-3.5 ${
+                  progression.shouldIncreaseWeight
+                    ? 'border-emerald-500/60 shadow-lg shadow-emerald-500/10'
+                    : 'border-slate-800/90'
+                }`}
               >
-                ✕
-              </button>
-            </div>
-
-            {/* Filter Categories */}
-            <div className="p-3 border-b border-slate-800/80 space-y-2">
-              <input
-                type="text"
-                placeholder="Поиск по названию..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-              />
-              <div className="flex items-center gap-1.5 overflow-x-auto py-1 no-scrollbar">
-                {categories.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
-                      selectedCategory === cat
-                        ? 'bg-emerald-500 text-dark-950'
-                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Exercise List */}
-            <div className="p-3 overflow-y-auto flex-1 space-y-2">
-              {availableToAdd.map((def) => {
-                const isAlreadyInWorkout = existingExIds.has(def.id);
-                return (
-                  <div
-                    key={def.id}
-                    onClick={() => {
-                      addExerciseToActiveWorkout(def);
-                      setShowAddModal(false);
-                    }}
-                    className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                      isAlreadyInWorkout 
-                        ? 'bg-slate-900/40 border-slate-800/50 opacity-60' 
-                        : 'bg-slate-900 border-slate-800 hover:border-emerald-500/50 hover:bg-slate-800/80'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-                          {def.category}
-                        </span>
-                        <span className="text-xs text-slate-400 font-mono">
-                          {def.targetSets} × {def.minReps}–{def.maxReps}
-                        </span>
-                      </div>
-                      <div className="text-sm font-semibold text-white">{def.name}</div>
+                {/* Exercise Header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base sm:text-lg font-bold text-white">
+                        {exercise.name}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-[11px] font-medium">
+                        {exercise.muscleGroup}
+                      </span>
                     </div>
-                    <div className="p-2 text-emerald-400 hover:bg-emerald-500/20 rounded-lg">
-                      <Plus size={18} />
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                      {exercise.targetRepMin && exercise.targetRepMax ? (
+                        <span>
+                          Цель:{' '}
+                          <strong className="text-slate-200">
+                            {exercise.targetSets ?? exercise.sets.length} × {exercise.targetRepMin}–
+                            {exercise.targetRepMax}
+                          </strong>
+                        </span>
+                      ) : (
+                        <span>Свободный диапазон</span>
+                      )}
+                      {exTonnage > 0 && (
+                        <span>
+                          Тоннаж:{' '}
+                          <strong className="text-blue-300">{formatNumber(exTonnage)} кг</strong>
+                        </span>
+                      )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveExercise(exercise.id)}
+                    aria-label={`Удалить упражнение ${exercise.name}`}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Double Progression Callout */}
+                {progression.shouldIncreaseWeight && (
+                  <div className="rounded-xl bg-emerald-500/15 border border-emerald-500/40 px-3.5 py-2.5 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0">
+                        <ArrowUpRight className="w-5 h-5 stroke-[2.5]" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-emerald-300">Пора повысить вес!</p>
+                        <p className="text-xs text-emerald-200/80">
+                          Все {progression.completedSetsCount} подх. выполнены на{' '}
+                          {progression.targetRepMax}+ повт. Попробуйте{' '}
+                          <strong className="text-white">
+                            {progression.topWeightUsed + defaultWeightStep} кг
+                          </strong>{' '}
+                          в следующий раз.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sets List */}
+                <div className="space-y-2.5">
+                  {exercise.sets.map((set, idx) => {
+                    const prevSet = prev
+                      ? prev.sets[idx] ?? prev.sets[prev.sets.length - 1]
+                      : null;
+
+                    return (
+                      <div
+                        key={set.id}
+                        className={`rounded-xl p-2.5 sm:p-3 border transition-colors space-y-2 ${
+                          set.completed
+                            ? 'bg-emerald-500/[0.08] border-emerald-500/35'
+                            : 'bg-[#0e121b] border-slate-800/80'
+                        }`}
+                      >
+                        {/* Set header + Previous performance hint */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`w-6 h-6 rounded-md text-xs font-bold flex items-center justify-center shrink-0 ${
+                                set.completed
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : 'bg-slate-800 text-slate-300'
+                              }`}
+                            >
+                              {idx + 1}
+                            </span>
+
+                            {prevSet ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleUpdateSet(exercise.id, set.id, {
+                                    weight: prevSet.weight,
+                                    reps: prevSet.reps,
+                                  })
+                                }
+                                title="Нажмите, чтобы подставить прошлый результат"
+                                className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-blue-300 transition truncate"
+                              >
+                                <RotateCcw className="w-3 h-3 text-blue-400 shrink-0" />
+                                <span className="truncate">
+                                  Прошлый раз:{' '}
+                                  <strong className="text-slate-200">
+                                    {prevSet.weight} кг × {prevSet.reps}
+                                  </strong>
+                                </span>
+                              </button>
+                            ) : (
+                              <span className="text-xs text-slate-500">
+                                Прошлый раз: нет данных
+                              </span>
+                            )}
+                          </div>
+
+                          {exercise.sets.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSet(exercise.id, set.id)}
+                              aria-label={`Удалить подход ${idx + 1}`}
+                              className="text-slate-600 hover:text-rose-400 p-1 transition shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Thumb-friendly Steppers + Complete button */}
+                        <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
+                          <StepperInput
+                            value={set.weight}
+                            step={defaultWeightStep}
+                            min={0}
+                            max={600}
+                            allowDecimal
+                            unit="кг"
+                            accent={set.completed ? 'emerald' : 'blue'}
+                            ariaLabel={`Подход ${idx + 1} вес`}
+                            onChange={(weight) =>
+                              handleUpdateSet(exercise.id, set.id, { weight })
+                            }
+                          />
+
+                          <StepperInput
+                            value={set.reps}
+                            step={1}
+                            min={0}
+                            max={200}
+                            unit="повт."
+                            accent={set.completed ? 'emerald' : 'blue'}
+                            ariaLabel={`Подход ${idx + 1} повторения`}
+                            onChange={(reps) =>
+                              handleUpdateSet(exercise.id, set.id, { reps })
+                            }
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleToggleSetCompleted(exercise.id, set.id, set.completed)
+                            }
+                            aria-label={
+                              set.completed ? 'Снять отметку подхода' : 'Отметить подход выполненным'
+                            }
+                            className={`w-11 h-11 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center transition active:scale-95 touch-manipulation ${
+                              set.completed
+                                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700'
+                            }`}
+                          >
+                            <Check className="w-5 h-5 stroke-[2.5]" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Add set button */}
+                <button
+                  type="button"
+                  onClick={() => handleAddSet(exercise.id)}
+                  className="w-full h-10 rounded-xl bg-[#0e121b] hover:bg-slate-800/80 border border-dashed border-slate-700/80 text-xs font-semibold text-slate-300 flex items-center justify-center gap-1.5 transition"
+                >
+                  <Plus className="w-4 h-4 text-blue-400" />
+                  Добавить подход
+                </button>
+              </article>
+            );
+          })}
         </div>
       )}
 
-      {/* CONFIRM CANCEL MODAL */}
-      {showCancelModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-dark-900 border border-slate-800 rounded-2xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
-            <div className="flex items-center gap-3 text-rose-400">
-              <AlertCircle size={28} />
-              <h3 className="text-lg font-bold text-white">Отменить тренировку?</h3>
-            </div>
-            <p className="text-sm text-slate-300">
-              Все введенные результаты текущей тренировки будут сброшены и не сохранятся в историю.
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowCancelModal(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-medium"
-              >
-                Продолжить тренировку
-              </button>
-              <button
-                onClick={() => {
-                  setShowCancelModal(false);
-                  cancelWorkout();
-                }}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-rose-950/60"
-              >
-                Да, отменить
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Add Exercise CTA */}
+      <button
+        type="button"
+        onClick={() => setIsPickerOpen(true)}
+        className="w-full h-12 rounded-2xl bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/35 text-blue-300 font-semibold text-sm flex items-center justify-center gap-2 transition"
+      >
+        <Plus className="w-4 h-4" />
+        Добавить упражнение
+      </button>
 
-      {/* CONFIRM FINISH MODAL */}
-      {showFinishModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in zoom-in-95">
-          <div className="bg-dark-900 border border-slate-800 rounded-2xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
-            <div className="text-center space-y-1">
-              <div className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-500 text-emerald-400 mx-auto flex items-center justify-center mb-2">
-                <Check size={28} className="stroke-[3]" />
-              </div>
-              <h3 className="text-lg font-bold text-white">Завершить тренировку?</h3>
-              <p className="text-xs text-slate-400">Результаты сохранятся в историю прогресса</p>
-            </div>
-
-            <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3 space-y-2 text-xs">
-              <div className="flex justify-between text-slate-400">
-                <span>Длительность:</span>
-                <span className="font-mono text-white font-bold">{formatDuration(workout.durationSeconds)}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Общий тоннаж:</span>
-                <span className="font-mono text-emerald-400 font-bold">{formatTonnage(currentTonnage)}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Выполнено подходов:</span>
-                <span className="font-mono text-white font-bold">{totalCompletedSets} из {totalSets}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                onClick={() => setShowFinishModal(false)}
-                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
-              >
-                Вернуться
-              </button>
-              <button
-                onClick={() => {
-                  setShowFinishModal(false);
-                  finishWorkout();
-                }}
-                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-950/60"
-              >
-                Сохранить в историю
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* INFO MODAL FOR PROGRESSION */}
-      {infoModalContent && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-dark-900 border border-emerald-500/40 rounded-2xl p-5 max-w-sm w-full space-y-3 shadow-2xl">
-            <div className="flex items-center gap-2 text-emerald-400">
-              <Sparkles size={20} />
-              <h4 className="text-base font-bold text-white">Логика умной прогрессии</h4>
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              {infoModalContent}
-            </p>
-            <div className="pt-2 text-right">
-              <button
-                onClick={() => setInfoModalContent(null)}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl"
-              >
-                Понятно
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ExercisePickerModal
+        isOpen={isPickerOpen}
+        onClose={() => setIsPickerOpen(false)}
+        onSelect={handleAddExercise}
+        sessions={sessions}
+      />
     </div>
   );
-};
+}
