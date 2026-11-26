@@ -1,40 +1,26 @@
-import type {
-  ActiveWorkoutDraft,
-  AppDatabase,
-  AppSettings,
-  WorkoutSession,
-  WorkoutTemplate,
-} from '../types/workout.ts';
-import { createDemoDatabase } from './demoData.ts';
+import type { AppDatabase, AppSettings, ProgramExercise, WorkoutDraftState, WorkoutEntry } from '../types/workout.ts';
+import { DEFAULT_PROGRAM } from './defaultProgram.ts';
 
-const DB_STORAGE_KEY = 'ironpulse_workout_db_v1';
-const DRAFT_STORAGE_KEY = 'ironpulse_active_draft_v1';
+const DB_KEY = 'ironpulse_gym_db_v2';
+const DRAFT_KEY = 'ironpulse_entry_draft_v2';
 
-export const DEFAULT_SETTINGS: AppSettings = {
-  defaultWeightStep: 2.5,
-  restTimerSeconds: 90,
-};
+export const DEFAULT_SETTINGS: AppSettings = { weightStep: 2.5 };
 
 export function createEmptyDatabase(): AppDatabase {
-  const demo = createDemoDatabase();
-  // Provide default starter templates even on empty DB? Or empty sessions + starter templates.
-  // Keeping starter templates makes first launch immediately usable, while sessions start empty unless demo is loaded.
   return {
-    version: 1,
-    templates: demo.templates,
-    sessions: [],
+    version: 2,
+    program: DEFAULT_PROGRAM.map((p) => ({ ...p })),
+    entries: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 }
 
 export function loadDatabase(): AppDatabase {
   try {
-    const raw = localStorage.getItem(DB_STORAGE_KEY);
-    if (!raw) {
-      return createEmptyDatabase();
-    }
+    const raw = localStorage.getItem(DB_KEY);
+    if (!raw) return createEmptyDatabase();
     const parsed = JSON.parse(raw) as Partial<AppDatabase>;
-    return normalizeDatabase(parsed);
+    return normalizeDb(parsed);
   } catch {
     return createEmptyDatabase();
   }
@@ -42,104 +28,124 @@ export function loadDatabase(): AppDatabase {
 
 export function saveDatabase(db: AppDatabase): void {
   try {
-    localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(db));
-  } catch (err) {
-    console.error('Failed to save database to localStorage:', err);
+    localStorage.setItem(DB_KEY, JSON.stringify(db));
+  } catch (e) {
+    console.error('Failed to save DB:', e);
   }
 }
 
-export function loadActiveDraft(): ActiveWorkoutDraft | null {
+export function loadEntryDraft(): WorkoutDraftState | null {
   try {
-    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    const raw = localStorage.getItem(DRAFT_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as ActiveWorkoutDraft;
-    if (!parsed || typeof parsed.id !== 'string' || !Array.isArray(parsed.exercises)) {
+    const parsed = JSON.parse(raw) as Partial<WorkoutDraftState>;
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.exercises)) {
       return null;
     }
-    return parsed;
+    return {
+      date: typeof parsed.date === 'string' ? parsed.date : '',
+      notes: typeof parsed.notes === 'string' ? parsed.notes : '',
+      exercises: parsed.exercises,
+      textMode: Boolean(parsed.textMode),
+      rawText: typeof parsed.rawText === 'string' ? parsed.rawText : '',
+    };
   } catch {
     return null;
   }
 }
 
-export function saveActiveDraft(draft: ActiveWorkoutDraft | null): void {
+export function saveEntryDraft(draft: WorkoutDraftState | null): void {
   try {
     if (!draft) {
-      localStorage.removeItem(DRAFT_STORAGE_KEY);
+      localStorage.removeItem(DRAFT_KEY);
     } else {
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     }
-  } catch (err) {
-    console.error('Failed to save active workout draft:', err);
+  } catch (e) {
+    console.error('Failed to save entry draft:', e);
   }
 }
 
-export function exportDatabaseToJson(db: AppDatabase): void {
-  const payload = JSON.stringify(db, null, 2);
-  const blob = new Blob([payload], { type: 'application/json' });
+export function exportJson(db: AppDatabase): void {
+  const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  const today = new Date().toISOString().slice(0, 10);
-  link.href = url;
-  link.download = `ironpulse-backup-${today}.json`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ironpulse-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
-export function parseAndValidateImportedJson(jsonText: string): AppDatabase {
-  const parsed: unknown = JSON.parse(jsonText);
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('Некорректный JSON-файл: ожидается объект базы данных.');
-  }
-
+export function parseImportedJson(text: string): AppDatabase {
+  const parsed: unknown = JSON.parse(text);
+  if (!parsed || typeof parsed !== 'object') throw new Error('Некорректный JSON');
   const candidate = parsed as Partial<AppDatabase>;
-  if (!Array.isArray(candidate.templates) && !Array.isArray(candidate.sessions)) {
-    throw new Error(
-      'Файл не содержит массивов templates или sessions. Проверьте формат экспорта.'
-    );
+  if (!Array.isArray(candidate.program) && !Array.isArray(candidate.entries)) {
+    throw new Error('JSON не содержит полей program или entries.');
   }
-
-  return normalizeDatabase(candidate);
+  return normalizeDb(candidate);
 }
 
-function normalizeDatabase(raw: Partial<AppDatabase>): AppDatabase {
-  const templates: WorkoutTemplate[] = Array.isArray(raw.templates)
-    ? raw.templates.filter(
-        (t): t is WorkoutTemplate =>
-          Boolean(t && typeof t.id === 'string' && typeof t.name === 'string' && Array.isArray(t.exercises))
-      )
+function normalizeProgram(rawProgram: unknown): ProgramExercise[] {
+  if (!Array.isArray(rawProgram) || rawProgram.length === 0) {
+    return DEFAULT_PROGRAM.map((p) => ({ ...p }));
+  }
+  const cleaned = rawProgram
+    .filter(
+      (p): p is ProgramExercise =>
+        Boolean(p && typeof p === 'object' && typeof (p as ProgramExercise).name === 'string' && (p as ProgramExercise).name.trim().length > 0)
+    )
+    .map((p) => ({
+      name: p.name.trim(),
+      targetSets: Math.max(1, Math.round(Number(p.targetSets) || 2)),
+      targetRepMin: Math.max(1, Math.round(Number(p.targetRepMin) || 6)),
+      targetRepMax: Math.max(1, Math.round(Number(p.targetRepMax) || 12)),
+    }));
+  return cleaned.length > 0 ? cleaned : DEFAULT_PROGRAM.map((p) => ({ ...p }));
+}
+
+function normalizeDb(raw: Partial<AppDatabase>): AppDatabase {
+  const program = normalizeProgram(raw.program);
+
+  const entries: WorkoutEntry[] = Array.isArray(raw.entries)
+    ? raw.entries
+        .filter(
+          (e): e is WorkoutEntry =>
+            Boolean(
+              e &&
+                typeof e === 'object' &&
+                typeof (e as WorkoutEntry).id === 'string' &&
+                typeof (e as WorkoutEntry).date === 'string' &&
+                Array.isArray((e as WorkoutEntry).exercises)
+            )
+        )
+        .map((e) => ({
+          id: e.id,
+          date: e.date,
+          createdAt: typeof e.createdAt === 'number' ? e.createdAt : undefined,
+          notes: typeof e.notes === 'string' && e.notes.trim() ? e.notes.trim() : undefined,
+          exercises: e.exercises
+            .filter((ex) => ex && typeof ex.name === 'string' && Array.isArray(ex.sets))
+            .map((ex) => ({
+              name: ex.name.trim(),
+              sets: ex.sets
+                .map((s) => ({
+                  weight: Math.max(0, Number(s?.weight) || 0),
+                  reps: Math.max(0, Math.round(Number(s?.reps) || 0)),
+                }))
+                .filter((s) => s.reps > 0),
+            }))
+            .filter((ex) => ex.name.length > 0 && ex.sets.length > 0),
+        }))
+        .filter((e) => e.exercises.length > 0)
     : [];
 
-  const sessions: WorkoutSession[] = Array.isArray(raw.sessions)
-    ? raw.sessions.filter(
-        (s): s is WorkoutSession =>
-          Boolean(
-            s &&
-              typeof s.id === 'string' &&
-              typeof s.name === 'string' &&
-              typeof s.date === 'string' &&
-              Array.isArray(s.exercises)
-          )
-      )
-    : [];
-
+  const ws = (raw.settings as AppSettings | undefined)?.weightStep;
   const settings: AppSettings = {
-    defaultWeightStep:
-      raw.settings?.defaultWeightStep === 1.25 || raw.settings?.defaultWeightStep === 2.5
-        ? raw.settings.defaultWeightStep
-        : DEFAULT_SETTINGS.defaultWeightStep,
-    restTimerSeconds:
-      typeof raw.settings?.restTimerSeconds === 'number' && raw.settings.restTimerSeconds >= 15
-        ? raw.settings.restTimerSeconds
-        : DEFAULT_SETTINGS.restTimerSeconds,
+    weightStep: ws === 1.25 || ws === 2.5 ? ws : DEFAULT_SETTINGS.weightStep,
   };
 
-  return {
-    version: 1,
-    templates,
-    sessions,
-    settings,
-  };
+  return { version: 2, program, entries, settings };
 }

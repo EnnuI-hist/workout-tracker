@@ -1,48 +1,55 @@
 import {
   BarChart3,
+  BookOpen,
   CheckCircle2,
   Database,
   Dumbbell,
-  History,
-  Layers,
-  Sparkles,
+  PenLine,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { ActiveWorkoutView } from './components/ActiveWorkoutView.tsx';
+import { useCallback, useEffect, useState } from 'react';
 import { AnalyticsView } from './components/AnalyticsView.tsx';
 import { DataModal } from './components/DataModal.tsx';
-import { HistoryView } from './components/HistoryView.tsx';
-import { TemplatesView } from './components/TemplatesView.tsx';
+import { JournalView } from './components/JournalView.tsx';
+import { WorkoutEntryForm } from './components/WorkoutEntryForm.tsx';
 import type {
-  ActiveWorkoutDraft,
   AppDatabase,
   NavTab,
-  WeightStep,
-  WorkoutSession,
-  WorkoutTemplate,
+  ProgramExercise,
+  WorkoutDraftState,
+  WorkoutEntry,
 } from './types/workout.ts';
+import { createDraftExercises, getTodayISO } from './utils/calculations.ts';
+import { DEFAULT_PROGRAM } from './utils/defaultProgram.ts';
 import {
-  calculateSessionTonnage,
-  evaluateDoubleProgression,
-  findPreviousExercisePerformance,
-  formatNumber,
-  generateId,
-  getTodayISODate,
-} from './utils/calculations.ts';
-import { createDemoDatabase } from './utils/demoData.ts';
-import {
-  loadActiveDraft,
   loadDatabase,
-  saveActiveDraft,
+  loadEntryDraft,
   saveDatabase,
+  saveEntryDraft,
 } from './utils/storage.ts';
+
+function buildFreshDraft(program: ProgramExercise[], entries: WorkoutEntry[]): WorkoutDraftState {
+  return {
+    date: getTodayISO(),
+    notes: '',
+    exercises: createDraftExercises(program, entries),
+    textMode: false,
+    rawText: '',
+  };
+}
 
 export function App() {
   const [db, setDb] = useState<AppDatabase>(() => loadDatabase());
-  const [activeDraft, setActiveDraft] = useState<ActiveWorkoutDraft | null>(() =>
-    loadActiveDraft()
-  );
-  const [activeTab, setActiveTab] = useState<NavTab>('workout');
+  const [draft, setDraft] = useState<WorkoutDraftState>(() => {
+    const saved = loadEntryDraft();
+    if (saved && saved.exercises.length > 0) {
+      return {
+        ...saved,
+        date: saved.date || getTodayISO(),
+      };
+    }
+    return buildFreshDraft(db.program, db.entries);
+  });
+  const [activeTab, setActiveTab] = useState<NavTab>('entry');
   const [isDataModalOpen, setIsDataModalOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -51,215 +58,124 @@ export function App() {
   }, [db]);
 
   useEffect(() => {
-    saveActiveDraft(activeDraft);
-  }, [activeDraft]);
+    saveEntryDraft(draft);
+  }, [draft]);
 
   useEffect(() => {
     if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 5000);
+    const timer = window.setTimeout(() => setToast(null), 3500);
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const showToast = (message: string) => {
-    setToast(message);
-  };
+  const showToast = useCallback((message: string) => setToast(message), []);
 
-  const handleChangeWeightStep = (step: WeightStep) => {
+  /* ─── Handlers ─── */
+
+  const handleSaveEntry = useCallback(
+    (entry: WorkoutEntry) => {
+      const nextEntries = [entry, ...db.entries];
+      setDb((prev) => ({
+        ...prev,
+        entries: [entry, ...prev.entries],
+      }));
+      setDraft(buildFreshDraft(db.program, nextEntries));
+      showToast('Тренировка сохранена ✓');
+      setActiveTab('journal');
+    },
+    [db.entries, db.program, showToast]
+  );
+
+  const handleUpdateEntry = useCallback(
+    (updated: WorkoutEntry) => {
+      setDb((prev) => ({
+        ...prev,
+        entries: prev.entries.map((e) => (e.id === updated.id ? updated : e)),
+      }));
+      showToast('Запись обновлена.');
+    },
+    [showToast]
+  );
+
+  const handleDeleteEntry = useCallback(
+    (id: string) => {
+      setDb((prev) => ({
+        ...prev,
+        entries: prev.entries.filter((e) => e.id !== id),
+      }));
+      showToast('Запись удалена.');
+    },
+    [showToast]
+  );
+
+  const handleImportDatabase = useCallback(
+    (imported: AppDatabase) => {
+      setDb(imported);
+      setDraft(buildFreshDraft(imported.program, imported.entries));
+      showToast('База тренировок восстановлена из JSON.');
+    },
+    [showToast]
+  );
+
+  const handleUpdateProgram = useCallback(
+    (nextProgram: ProgramExercise[]) => {
+      setDb((prev) => ({
+        ...prev,
+        program: nextProgram,
+      }));
+      setDraft((prevDraft) => ({
+        ...prevDraft,
+        exercises: createDraftExercises(nextProgram, db.entries),
+      }));
+    },
+    [db.entries]
+  );
+
+  const handleResetProgram = useCallback(() => {
+    const defaultProg = DEFAULT_PROGRAM.map((p) => ({ ...p }));
     setDb((prev) => ({
       ...prev,
-      settings: {
-        ...prev.settings,
-        defaultWeightStep: step,
-      },
+      program: defaultProg,
     }));
-  };
+    setDraft((prevDraft) => ({
+      ...prevDraft,
+      exercises: createDraftExercises(defaultProg, db.entries),
+    }));
+    showToast('Загружена базовая программа (13 упр. Full-Body).');
+  }, [db.entries, showToast]);
 
-  const handleStartFromTemplate = (template: WorkoutTemplate) => {
-    if (activeDraft) {
-      setActiveTab('workout');
-      showToast('Сначала завершите или отмените текущую тренировку.');
-      return;
-    }
-
-    const exercises = template.exercises.map((tplEx) => {
-      const prev = findPreviousExercisePerformance(db.sessions, tplEx.name);
-      const sets = Array.from({ length: tplEx.targetSets }, (_, idx) => {
-        const prevSet = prev?.sets[idx] ?? prev?.sets[prev.sets.length - 1];
-        return {
-          id: generateId(),
-          weight: prevSet ? prevSet.weight : 20,
-          reps: prevSet ? prevSet.reps : tplEx.targetRepMin,
-          completed: false,
-        };
-      });
-
-      return {
-        id: generateId(),
-        name: tplEx.name,
-        muscleGroup: tplEx.muscleGroup,
-        targetSets: tplEx.targetSets,
-        targetRepMin: tplEx.targetRepMin,
-        targetRepMax: tplEx.targetRepMax,
-        sets,
-      };
-    });
-
-    setActiveDraft({
-      id: generateId(),
-      templateId: template.id,
-      name: template.name,
-      date: getTodayISODate(),
-      startedAt: new Date().toISOString(),
-      exercises,
-    });
-    setActiveTab('workout');
-  };
-
-  const handleStartEmpty = () => {
-    if (activeDraft) {
-      setActiveTab('workout');
-      return;
-    }
-    setActiveDraft({
-      id: generateId(),
-      name: 'Свободная тренировка',
-      date: getTodayISODate(),
-      startedAt: new Date().toISOString(),
-      exercises: [],
-    });
-    setActiveTab('workout');
-  };
-
-  const handleFinishWorkout = () => {
-    if (!activeDraft) return;
-
-    const cleanedExercises = activeDraft.exercises
-      .map((ex) => ({
-        ...ex,
-        sets: ex.sets.filter((s) => s.completed && s.reps > 0),
-      }))
-      .filter((ex) => ex.sets.length > 0);
-
-    if (cleanedExercises.length === 0) {
-      showToast('Отметьте хотя бы один выполненный подход.');
-      return;
-    }
-
-    const finishedAt = new Date().toISOString();
-    const durationMinutes = Math.max(
-      1,
-      Math.round((Date.now() - new Date(activeDraft.startedAt).getTime()) / 60_000)
-    );
-
-    const newSession: WorkoutSession = {
-      id: activeDraft.id,
-      templateId: activeDraft.templateId,
-      name: activeDraft.name.trim() || 'Тренировка',
-      date: activeDraft.date || getTodayISODate(),
-      startedAt: activeDraft.startedAt,
-      finishedAt,
-      durationMinutes,
-      exercises: cleanedExercises,
-      notes: activeDraft.notes,
-    };
-
-    const tonnage = Math.round(calculateSessionTonnage(newSession));
-    const readyToProgress = cleanedExercises.filter(
-      (ex) => evaluateDoubleProgression(ex).shouldIncreaseWeight
-    ).length;
-
+  const handleClearEntries = useCallback(() => {
     setDb((prev) => ({
       ...prev,
-      sessions: [newSession, ...prev.sessions],
+      entries: [],
     }));
-    setActiveDraft(null);
-    setActiveTab('history');
+    setDraft(buildFreshDraft(db.program, []));
+  }, [db.program]);
 
-    const extra =
-      readyToProgress > 0
-        ? ` · Повысить вес в ${readyToProgress} упр.!`
-        : '';
-    showToast(`Тренировка сохранена: ${formatNumber(tonnage)} кг тоннажа${extra}`);
-  };
-
-  const handleDiscardWorkout = () => {
-    setActiveDraft(null);
-    showToast('Активная тренировка отменена.');
-  };
-
-  const handleSaveTemplate = (template: WorkoutTemplate) => {
-    setDb((prev) => {
-      const exists = prev.templates.some((t) => t.id === template.id);
-      const templates = exists
-        ? prev.templates.map((t) => (t.id === template.id ? template : t))
-        : [...prev.templates, template];
-      return { ...prev, templates };
-    });
-    showToast(`Шаблон «${template.name}» сохранён.`);
-  };
-
-  const handleDeleteTemplate = (templateId: string) => {
+  const handleChangeWeightStep = useCallback((step: 1.25 | 2.5) => {
     setDb((prev) => ({
       ...prev,
-      templates: prev.templates.filter((t) => t.id !== templateId),
+      settings: { ...prev.settings, weightStep: step },
     }));
-    showToast('Шаблон удалён.');
-  };
+  }, []);
 
-  const handleUpdateSession = (updated: WorkoutSession) => {
-    setDb((prev) => ({
-      ...prev,
-      sessions: prev.sessions.map((s) => (s.id === updated.id ? updated : s)),
-    }));
-    showToast('Запись тренировки обновлена.');
-  };
-
-  const handleDeleteSession = (sessionId: string) => {
-    setDb((prev) => ({
-      ...prev,
-      sessions: prev.sessions.filter((s) => s.id !== sessionId),
-    }));
-    showToast('Тренировка удалена из истории.');
-  };
-
-  const handleLoadDemoData = () => {
-    const demo = createDemoDatabase();
-    setDb((prev) => ({
-      ...demo,
-      settings: prev.settings,
-    }));
-    showToast('Демо-данные загружены: 12 тренировок за 4 недели и 3 шаблона.');
-  };
-
-  const handleImportDatabase = (imported: AppDatabase) => {
-    setDb(imported);
-    showToast('База тренировок успешно восстановлена из JSON.');
-  };
-
-  const handleClearAllData = () => {
-    setDb((prev) => ({
-      ...prev,
-      sessions: [],
-    }));
-  };
+  /* ─── Nav ─── */
 
   const navItems: Array<{
     id: NavTab;
     label: string;
     icon: typeof Dumbbell;
-    badge?: boolean;
+    badge?: number;
   }> = [
-    { id: 'workout', label: 'Тренировка', icon: Dumbbell, badge: Boolean(activeDraft) },
-    { id: 'templates', label: 'Программы', icon: Layers },
+    { id: 'entry', label: 'Запись', icon: PenLine },
+    { id: 'journal', label: 'Журнал', icon: BookOpen, badge: db.entries.length || undefined },
     { id: 'analytics', label: 'Аналитика', icon: BarChart3 },
-    { id: 'history', label: 'История', icon: History },
   ];
 
   return (
     <div className="min-h-screen bg-[#0b0d12] text-slate-100 flex flex-col">
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-[#0b0d12]/90 backdrop-blur-md border-b border-slate-800/80">
-        <div className="max-w-5xl mx-auto px-4 h-14 sm:h-16 flex items-center justify-between gap-3">
+        <div className="max-w-6xl mx-auto px-4 h-14 sm:h-16 flex items-center justify-between gap-3">
           {/* Brand */}
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
@@ -270,7 +186,7 @@ export function App() {
                 IronPulse
               </h1>
               <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium mt-0.5">
-                Workout & Progression
+                Дневник тренировок
               </p>
             </div>
           </div>
@@ -293,8 +209,14 @@ export function App() {
                 >
                   <Icon className="w-4 h-4" />
                   <span>{item.label}</span>
-                  {item.badge && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  {item.badge !== undefined && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full tabular-nums ${
+                        isActive ? 'bg-blue-500/60 text-white' : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
                   )}
                 </button>
               );
@@ -303,24 +225,13 @@ export function App() {
 
           {/* Header Actions */}
           <div className="flex items-center gap-2">
-            {db.sessions.length === 0 && (
-              <button
-                type="button"
-                onClick={handleLoadDemoData}
-                className="hidden sm:inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-semibold transition"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Демо-данные
-              </button>
-            )}
-
             <button
               type="button"
               onClick={() => setIsDataModalOpen(true)}
               className="h-9 px-3 rounded-xl bg-[#141822] hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition"
             >
               <Database className="w-3.5 h-3.5 text-blue-400" />
-              <span className="hidden sm:inline">Данные / JSON</span>
+              <span className="hidden sm:inline">Программа / JSON</span>
               <span className="sm:hidden">JSON</span>
             </button>
           </div>
@@ -328,56 +239,38 @@ export function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 w-full max-w-5xl mx-auto px-4 pt-4 sm:pt-6 pb-24 md:pb-10">
-        {activeTab === 'workout' && (
-          <ActiveWorkoutView
-            draft={activeDraft}
-            templates={db.templates}
-            sessions={db.sessions}
-            defaultWeightStep={db.settings.defaultWeightStep}
-            onChangeWeightStep={handleChangeWeightStep}
-            onStartFromTemplate={handleStartFromTemplate}
-            onStartEmpty={handleStartEmpty}
-            onUpdateDraft={setActiveDraft}
-            onFinishWorkout={handleFinishWorkout}
-            onDiscardWorkout={handleDiscardWorkout}
-            onLoadDemoData={handleLoadDemoData}
-            onGoToTemplates={() => setActiveTab('templates')}
+      <main className="flex-1 w-full max-w-6xl mx-auto px-4 pt-4 sm:pt-6 pb-24 md:pb-10">
+        {activeTab === 'entry' && (
+          <WorkoutEntryForm
+            program={db.program}
+            entries={db.entries}
+            weightStep={db.settings.weightStep}
+            draft={draft}
+            onChangeDraft={setDraft}
+            onLoadDefaultProgram={handleResetProgram}
+            onSave={handleSaveEntry}
+            onNotify={showToast}
           />
         )}
 
-        {activeTab === 'templates' && (
-          <TemplatesView
-            templates={db.templates}
-            sessions={db.sessions}
-            onSaveTemplate={handleSaveTemplate}
-            onDeleteTemplate={handleDeleteTemplate}
-            onStartTemplate={handleStartFromTemplate}
+        {activeTab === 'journal' && (
+          <JournalView
+            entries={db.entries}
+            program={db.program}
+            onUpdateEntry={handleUpdateEntry}
+            onDeleteEntry={handleDeleteEntry}
+            onNotify={showToast}
           />
         )}
 
         {activeTab === 'analytics' && (
-          <AnalyticsView
-            sessions={db.sessions}
-            templates={db.templates}
-            onLoadDemoData={handleLoadDemoData}
-          />
-        )}
-
-        {activeTab === 'history' && (
-          <HistoryView
-            sessions={db.sessions}
-            defaultWeightStep={db.settings.defaultWeightStep}
-            onUpdateSession={handleUpdateSession}
-            onDeleteSession={handleDeleteSession}
-            onLoadDemoData={handleLoadDemoData}
-          />
+          <AnalyticsView entries={db.entries} program={db.program} />
         )}
       </main>
 
       {/* Mobile Bottom Navigation */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-[#0e121b]/95 backdrop-blur-md border-t border-slate-800/90 px-2 py-1.5">
-        <div className="grid grid-cols-4 gap-1 max-w-md mx-auto">
+        <div className="grid grid-cols-3 gap-1 max-w-md mx-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -394,8 +287,10 @@ export function App() {
               >
                 <div className="relative">
                   <Icon className="w-5 h-5" />
-                  {item.badge && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 absolute -top-0.5 -right-1 animate-pulse" />
+                  {item.badge !== undefined && (
+                    <span className="absolute -top-1.5 -right-2.5 px-1 min-w-[16px] h-4 rounded-full bg-blue-600 text-[9px] font-bold text-white flex items-center justify-center tabular-nums">
+                      {item.badge}
+                    </span>
                   )}
                 </div>
                 <span className="text-[10px] font-semibold mt-1">{item.label}</span>
@@ -419,8 +314,9 @@ export function App() {
         onClose={() => setIsDataModalOpen(false)}
         db={db}
         onImportDatabase={handleImportDatabase}
-        onLoadDemoData={handleLoadDemoData}
-        onClearAllData={handleClearAllData}
+        onUpdateProgram={handleUpdateProgram}
+        onResetProgram={handleResetProgram}
+        onClearEntries={handleClearEntries}
         onChangeWeightStep={handleChangeWeightStep}
       />
     </div>

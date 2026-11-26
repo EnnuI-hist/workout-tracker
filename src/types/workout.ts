@@ -1,83 +1,57 @@
-export type MuscleGroup =
-  | 'Грудь'
-  | 'Спина'
-  | 'Ноги'
-  | 'Плечи'
-  | 'Руки'
-  | 'Кор'
-  | 'Всё тело';
+/* ─── Compact diary-style workout tracker types ─── */
 
-export interface TemplateExercise {
-  id: string;
+export interface ProgramExercise {
   name: string;
-  muscleGroup: MuscleGroup;
   targetSets: number;
   targetRepMin: number;
   targetRepMax: number;
-  notes?: string;
 }
 
-export interface WorkoutTemplate {
-  id: string;
-  name: string;
-  description?: string;
-  exercises: TemplateExercise[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface WorkoutSet {
-  id: string;
+export interface SetEntry {
   weight: number;
   reps: number;
-  completed: boolean;
 }
 
-export interface WorkoutExercise {
-  id: string;
+export interface ExerciseEntry {
   name: string;
-  muscleGroup: MuscleGroup;
-  targetSets?: number;
-  targetRepMin?: number;
-  targetRepMax?: number;
-  sets: WorkoutSet[];
+  sets: SetEntry[];
+}
+
+export interface WorkoutEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  createdAt?: number;
+  exercises: ExerciseEntry[];
   notes?: string;
 }
 
-export interface WorkoutSession {
-  id: string;
-  templateId?: string;
-  name: string;
-  date: string; // ISO YYYY-MM-DD
-  startedAt: string; // ISO timestamp
-  finishedAt: string; // ISO timestamp
-  durationMinutes: number;
-  exercises: WorkoutExercise[];
-  notes?: string;
+export interface DraftSet {
+  weight: string;
+  reps: string;
 }
 
-export interface ActiveWorkoutDraft {
-  id: string;
-  templateId?: string;
+export interface DraftExercise {
   name: string;
+  sets: DraftSet[];
+}
+
+export interface WorkoutDraftState {
   date: string;
-  startedAt: string;
-  exercises: WorkoutExercise[];
-  notes?: string;
+  notes: string;
+  exercises: DraftExercise[];
+  textMode: boolean;
+  rawText: string;
 }
-
-export type WeightStep = 1.25 | 2.5;
 
 export interface AppSettings {
-  defaultWeightStep: WeightStep;
-  restTimerSeconds: number;
+  weightStep: 1.25 | 2.5;
 }
 
 export interface AppDatabase {
   version: number;
-  templates: WorkoutTemplate[];
-  sessions: WorkoutSession[];
+  program: ProgramExercise[];
+  entries: WorkoutEntry[];
   settings: AppSettings;
 }
 
-export type NavTab = 'workout' | 'templates' | 'analytics' | 'history';
+export type NavTab = 'entry' | 'journal' | 'analytics';

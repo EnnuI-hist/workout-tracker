@@ -1,47 +1,6 @@
-import type {
-  MuscleGroup,
-  WorkoutExercise,
-  WorkoutSession,
-  WorkoutSet,
-} from '../types/workout.ts';
+import type { DraftExercise, ExerciseEntry, ProgramExercise, SetEntry, WorkoutEntry } from '../types/workout.ts';
 
-export const MUSCLE_GROUPS: MuscleGroup[] = [
-  'Грудь',
-  'Спина',
-  'Ноги',
-  'Плечи',
-  'Руки',
-  'Кор',
-  'Всё тело',
-];
-
-export const COMMON_EXERCISES: { name: string; muscleGroup: MuscleGroup }[] = [
-  { name: 'Жим штанги лёжа', muscleGroup: 'Грудь' },
-  { name: 'Жим гантелей на наклонной', muscleGroup: 'Грудь' },
-  { name: 'Отжимания на брусьях', muscleGroup: 'Грудь' },
-  { name: 'Сведение рук в кроссовере', muscleGroup: 'Грудь' },
-  { name: 'Приседания со штангой', muscleGroup: 'Ноги' },
-  { name: 'Жим ногами в тренажёре', muscleGroup: 'Ноги' },
-  { name: 'Румынская тяга', muscleGroup: 'Ноги' },
-  { name: 'Выпады с гантелями', muscleGroup: 'Ноги' },
-  { name: 'Сгибание ног лёжа', muscleGroup: 'Ноги' },
-  { name: 'Подъём на носки стоя', muscleGroup: 'Ноги' },
-  { name: 'Становая тяга', muscleGroup: 'Спина' },
-  { name: 'Подтягивания', muscleGroup: 'Спина' },
-  { name: 'Тяга штанги в наклоне', muscleGroup: 'Спина' },
-  { name: 'Тяга верхнего блока', muscleGroup: 'Спина' },
-  { name: 'Тяга горизонтального блока', muscleGroup: 'Спина' },
-  { name: 'Армейский жим стоя', muscleGroup: 'Плечи' },
-  { name: 'Жим гантелей сидя', muscleGroup: 'Плечи' },
-  { name: 'Махи гантелями в стороны', muscleGroup: 'Плечи' },
-  { name: 'Тяга к лицу (Face Pull)', muscleGroup: 'Плечи' },
-  { name: 'Подъём штанги на бицепс', muscleGroup: 'Руки' },
-  { name: 'Молотки с гантелями', muscleGroup: 'Руки' },
-  { name: 'Французский жим', muscleGroup: 'Руки' },
-  { name: 'Разгибание рук на блоке', muscleGroup: 'Руки' },
-  { name: 'Скручивания на пресс', muscleGroup: 'Кор' },
-  { name: 'Планка с отягощением', muscleGroup: 'Кор' },
-];
+/* ─── ID ─── */
 
 export function generateId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -50,321 +9,30 @@ export function generateId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/**
- * Epley 1RM formula: weight * (1 + reps / 30).
- * For 1 rep, returns weight directly.
- */
-export function calculateEpley1RM(weight: number, reps: number): number {
-  if (weight <= 0 || reps <= 0) return 0;
-  if (reps === 1) return roundTo1Decimal(weight);
-  return roundTo1Decimal(weight * (1 + reps / 30));
+/* ─── Date helpers ─── */
+
+export function getTodayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function roundTo1Decimal(value: number): number {
-  return Math.round(value * 10) / 10;
+export function parseISODateUTC(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return 0;
+  return Date.UTC(y, m - 1, d);
 }
 
-export function calculateSetTonnage(set: WorkoutSet): number {
-  if (!set.completed || set.weight < 0 || set.reps <= 0) return 0;
-  return set.weight * set.reps;
+export function shiftISODate(iso: string, deltaDays: number): string {
+  const ms = parseISODateUTC(iso);
+  if (!ms) return iso;
+  const shifted = new Date(ms + deltaDays * 86400000);
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
 }
 
-export function calculateExerciseTonnage(exercise: WorkoutExercise): number {
-  return exercise.sets.reduce((sum, set) => sum + calculateSetTonnage(set), 0);
-}
-
-export function calculateSessionTonnage(session: Pick<WorkoutSession, 'exercises'>): number {
-  return session.exercises.reduce((sum, ex) => sum + calculateExerciseTonnage(ex), 0);
-}
-
-export function getExerciseMaxWeight(exercise: WorkoutExercise): number {
-  let max = 0;
-  for (const s of exercise.sets) {
-    if (s.completed && s.reps > 0 && s.weight > max) {
-      max = s.weight;
-    }
-  }
-  return max;
-}
-
-export function getExerciseBest1RM(exercise: WorkoutExercise): number {
-  let best = 0;
-  for (const s of exercise.sets) {
-    if (s.completed && s.weight > 0 && s.reps > 0) {
-      const e1rm = calculateEpley1RM(s.weight, s.reps);
-      if (e1rm > best) best = e1rm;
-    }
-  }
-  return best;
-}
-
-export interface ProgressionStatus {
-  shouldIncreaseWeight: boolean;
-  completedSetsCount: number;
-  requiredSetsCount: number;
-  targetRepMax: number | null;
-  topWeightUsed: number;
-}
-
-/**
- * Evaluates Double Progression rule:
- * If the exercise has a targetRepMax (and targetSets, defaulting to sets.length),
- * check whether at least `requiredSetsCount` sets are completed AND every completed set
- * reached `reps >= targetRepMax`.
- */
-export function evaluateDoubleProgression(exercise: WorkoutExercise): ProgressionStatus {
-  const targetRepMax = exercise.targetRepMax ?? null;
-  const completedSets = exercise.sets.filter((s) => s.completed && s.reps > 0);
-  const requiredSetsCount = exercise.targetSets ?? exercise.sets.length;
-
-  const topWeightUsed = completedSets.reduce(
-    (max, s) => (s.weight > max ? s.weight : max),
-    0
-  );
-
-  if (!targetRepMax || requiredSetsCount <= 0 || completedSets.length < requiredSetsCount) {
-    return {
-      shouldIncreaseWeight: false,
-      completedSetsCount: completedSets.length,
-      requiredSetsCount,
-      targetRepMax,
-      topWeightUsed,
-    };
-  }
-
-  const allReachedUpperLimit = completedSets.every((s) => s.reps >= targetRepMax);
-
-  return {
-    shouldIncreaseWeight: allReachedUpperLimit,
-    completedSetsCount: completedSets.length,
-    requiredSetsCount,
-    targetRepMax,
-    topWeightUsed,
-  };
-}
-
-/**
- * Finds the most recent completed session (strictly before `beforeDate` or excluding `excludeSessionId`)
- * that contains the given exercise name (case-insensitive trimmed).
- */
-export function findPreviousExercisePerformance(
-  sessions: WorkoutSession[],
-  exerciseName: string,
-  options?: { excludeSessionId?: string; onOrBeforeDate?: string }
-): { date: string; sets: WorkoutSet[] } | null {
-  const normalized = exerciseName.trim().toLowerCase();
-  if (!normalized) return null;
-
-  const sorted = [...sessions].sort((a, b) => {
-    const dateDiff = b.date.localeCompare(a.date);
-    if (dateDiff !== 0) return dateDiff;
-    return b.finishedAt.localeCompare(a.finishedAt);
-  });
-
-  for (const session of sorted) {
-    if (options?.excludeSessionId && session.id === options.excludeSessionId) {
-      continue;
-    }
-    if (options?.onOrBeforeDate && session.date > options.onOrBeforeDate) {
-      continue;
-    }
-    const found = session.exercises.find(
-      (ex) => ex.name.trim().toLowerCase() === normalized
-    );
-    if (found) {
-      const completed = found.sets.filter((s) => s.completed && s.reps > 0);
-      if (completed.length > 0) {
-        return { date: session.date, sets: completed };
-      }
-    }
-  }
-
-  return null;
-}
-
-export interface ExerciseHistoryPoint {
-  sessionId: string;
-  date: string;
-  label: string;
-  maxWeight: number;
-  estimated1RM: number;
-  tonnage: number;
-  bestSetText: string;
-}
-
-export function getExerciseProgressionSeries(
-  sessions: WorkoutSession[],
-  exerciseName: string
-): ExerciseHistoryPoint[] {
-  const normalized = exerciseName.trim().toLowerCase();
-  if (!normalized) return [];
-
-  const chronological = [...sessions].sort((a, b) => {
-    const dateDiff = a.date.localeCompare(b.date);
-    if (dateDiff !== 0) return dateDiff;
-    return a.finishedAt.localeCompare(b.finishedAt);
-  });
-
-  const points: ExerciseHistoryPoint[] = [];
-
-  for (const session of chronological) {
-    const ex = session.exercises.find(
-      (item) => item.name.trim().toLowerCase() === normalized
-    );
-    if (!ex) continue;
-
-    const completedSets = ex.sets.filter((s) => s.completed && s.reps > 0);
-    if (completedSets.length === 0) continue;
-
-    const maxWeight = getExerciseMaxWeight(ex);
-    const estimated1RM = getExerciseBest1RM(ex);
-    const tonnage = Math.round(calculateExerciseTonnage(ex));
-
-    let bestSet = completedSets[0];
-    for (const s of completedSets) {
-      if (
-        calculateEpley1RM(s.weight, s.reps) >
-        calculateEpley1RM(bestSet.weight, bestSet.reps)
-      ) {
-        bestSet = s;
-      }
-    }
-
-    points.push({
-      sessionId: session.id,
-      date: session.date,
-      label: formatShortDate(session.date),
-      maxWeight,
-      estimated1RM,
-      tonnage,
-      bestSetText: `${bestSet.weight} кг × ${bestSet.reps}`,
-    });
-  }
-
-  return points;
-}
-
-export interface ExercisePR {
-  exerciseName: string;
-  muscleGroup: MuscleGroup;
-  maxWeight: number;
-  maxWeightDate: string;
-  bestSetAtMaxWeight: string;
-  best1RM: number;
-  best1RMDate: string;
-  best1RMSet: string;
-  sessionsCount: number;
-}
-
-export function getAllExercisePRs(sessions: WorkoutSession[]): ExercisePR[] {
-  const map = new Map<string, ExercisePR & { maxWeightReps: number }>();
-
-  const chronological = [...sessions].sort((a, b) => a.date.localeCompare(b.date));
-
-  for (const session of chronological) {
-    for (const ex of session.exercises) {
-      const key = ex.name.trim().toLowerCase();
-      if (!key) continue;
-
-      const completed = ex.sets.filter((s) => s.completed && s.reps > 0);
-      if (completed.length === 0) continue;
-
-      let existing = map.get(key);
-      if (!existing) {
-        existing = {
-          exerciseName: ex.name.trim(),
-          muscleGroup: ex.muscleGroup,
-          maxWeight: -1,
-          maxWeightReps: 0,
-          maxWeightDate: session.date,
-          bestSetAtMaxWeight: '',
-          best1RM: -1,
-          best1RMDate: session.date,
-          best1RMSet: '',
-          sessionsCount: 0,
-        };
-        map.set(key, existing);
-      }
-
-      existing.sessionsCount += 1;
-
-      for (const s of completed) {
-        const e1rm = calculateEpley1RM(s.weight, s.reps);
-        if (
-          s.weight > existing.maxWeight ||
-          (s.weight === existing.maxWeight && s.reps > existing.maxWeightReps)
-        ) {
-          existing.maxWeight = s.weight;
-          existing.maxWeightReps = s.reps;
-          existing.maxWeightDate = session.date;
-          existing.bestSetAtMaxWeight = `${s.weight} кг × ${s.reps}`;
-        }
-        if (e1rm > existing.best1RM) {
-          existing.best1RM = e1rm;
-          existing.best1RMDate = session.date;
-          existing.best1RMSet = `${s.weight} кг × ${s.reps}`;
-        }
-      }
-    }
-  }
-
-  return Array.from(map.values())
-    .filter((pr) => pr.maxWeight >= 0)
-    .map(({ maxWeightReps: _unused, ...pr }) => pr)
-    .sort((a, b) => b.best1RM - a.best1RM);
-}
-
-export function getAllUniqueExerciseNames(
-  sessions: WorkoutSession[],
-  templateExerciseNames: string[] = []
-): string[] {
-  const map = new Map<string, string>();
-  for (const name of templateExerciseNames) {
-    const trimmed = name.trim();
-    if (trimmed && !map.has(trimmed.toLowerCase())) {
-      map.set(trimmed.toLowerCase(), trimmed);
-    }
-  }
-  for (const session of sessions) {
-    for (const ex of session.exercises) {
-      const trimmed = ex.name.trim();
-      if (trimmed && !map.has(trimmed.toLowerCase())) {
-        map.set(trimmed.toLowerCase(), trimmed);
-      }
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => a.localeCompare(b, 'ru'));
-}
-
-export function getTodayISODate(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-export function offsetISODate(daysOffset: number, baseDate = new Date()): string {
-  const d = new Date(baseDate);
-  d.setDate(d.getDate() + daysOffset);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-export function formatShortDate(isoDate: string): string {
-  const [y, m, d] = isoDate.split('-').map(Number);
-  if (!y || !m || !d) return isoDate;
-  const date = new Date(y, m - 1, d);
-  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }).replace('.', '');
-}
-
-export function formatFullDate(isoDate: string): string {
-  const [y, m, d] = isoDate.split('-').map(Number);
-  if (!y || !m || !d) return isoDate;
-  const date = new Date(y, m - 1, d);
-  return date.toLocaleDateString('ru-RU', {
+export function formatFullDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString('ru-RU', {
     weekday: 'short',
     day: 'numeric',
     month: 'long',
@@ -372,6 +40,451 @@ export function formatFullDate(isoDate: string): string {
   });
 }
 
-export function formatNumber(n: number): string {
+export function formatShortDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }).replace('.', '');
+}
+
+export function formatNum(n: number): string {
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(n);
+}
+
+/* ─── Sorting ─── */
+
+export function sortEntriesNewestFirst(entries: WorkoutEntry[]): WorkoutEntry[] {
+  return [...entries].sort(
+    (a, b) =>
+      b.date.localeCompare(a.date) ||
+      (b.createdAt ?? 0) - (a.createdAt ?? 0) ||
+      b.id.localeCompare(a.id)
+  );
+}
+
+export function sortEntriesChronological(entries: WorkoutEntry[]): WorkoutEntry[] {
+  return [...entries].sort(
+    (a, b) =>
+      a.date.localeCompare(b.date) ||
+      (a.createdAt ?? 0) - (b.createdAt ?? 0) ||
+      a.id.localeCompare(b.id)
+  );
+}
+
+/* ─── Set formatting & checks ─── */
+
+export function isCompletedSet(s: SetEntry): boolean {
+  return s.weight >= 0 && s.reps > 0;
+}
+
+export function formatSetsCompact(sets: SetEntry[]): string {
+  return sets.map((s) => `${s.weight}×${s.reps}`).join(', ');
+}
+
+export function formatEntryAsText(entry: WorkoutEntry): string {
+  const lines: string[] = [`📅 ${formatFullDate(entry.date)}`];
+  if (entry.notes) lines.push(`📝 ${entry.notes}`);
+  lines.push('');
+  for (const ex of entry.exercises) {
+    if (ex.sets.length === 0) continue;
+    lines.push(`${ex.name} — ${formatSetsCompact(ex.sets)}`);
+  }
+  return lines.join('\n');
+}
+
+/* ─── 1RM (Epley) ─── */
+
+export function epley1RM(weight: number, reps: number): number {
+  if (weight <= 0 || reps <= 0) return 0;
+  if (reps === 1) return weight;
+  return Math.round(weight * (1 + reps / 30) * 10) / 10;
+}
+
+/* ─── Tonnage ─── */
+
+export function setTonnage(s: SetEntry): number {
+  return s.weight * s.reps;
+}
+
+export function exerciseTonnage(ex: ExerciseEntry): number {
+  return ex.sets.reduce((t, s) => t + setTonnage(s), 0);
+}
+
+export function entryTonnage(entry: WorkoutEntry): number {
+  return entry.exercises.reduce((t, ex) => t + exerciseTonnage(ex), 0);
+}
+
+/* ─── Max weight in exercise ─── */
+
+export function exerciseMaxWeight(ex: ExerciseEntry): number {
+  return ex.sets.reduce((mx, s) => (s.weight > mx && s.reps > 0 ? s.weight : mx), 0);
+}
+
+export function exerciseBest1RM(ex: ExerciseEntry): number {
+  return ex.sets.reduce((mx, s) => {
+    const e = epley1RM(s.weight, s.reps);
+    return e > mx ? e : mx;
+  }, 0);
+}
+
+/* ─── Double progression check ─── */
+
+export interface ProgressionStatus {
+  shouldIncrease: boolean;
+  reason: string;
+}
+
+/**
+ * Double progression rule:
+ * True when the first set reached targetRepMax, all completed sets are >= targetRepMin,
+ * and at least targetSets sets were completed.
+ */
+export function checkDoubleProgression(
+  sets: SetEntry[],
+  prog: ProgramExercise | undefined
+): ProgressionStatus {
+  if (!prog || sets.length === 0) return { shouldIncrease: false, reason: '' };
+
+  const { targetSets, targetRepMin, targetRepMax } = prog;
+  const completed = sets.filter(isCompletedSet);
+  if (completed.length === 0) return { shouldIncrease: false, reason: '' };
+  if (completed.length < targetSets) return { shouldIncrease: false, reason: '' };
+
+  const first = completed[0];
+  if (first.reps < targetRepMax) return { shouldIncrease: false, reason: '' };
+
+  const allHoldMin = completed.every((s) => s.reps >= targetRepMin);
+  if (!allHoldMin) return { shouldIncrease: false, reason: '' };
+
+  return {
+    shouldIncrease: true,
+    reason: `1-й подход: ${first.reps} повт. (цель ${targetRepMin}-${targetRepMax}), все подходы удержаны — пора повышать вес`,
+  };
+}
+
+/* ─── Find previous performance ─── */
+
+export function findPreviousPerformance(
+  entries: WorkoutEntry[],
+  exerciseName: string,
+  excludeId?: string
+): SetEntry[] | null {
+  const key = exerciseName.trim().toLowerCase();
+  const sorted = sortEntriesNewestFirst(entries);
+  for (const entry of sorted) {
+    if (excludeId && entry.id === excludeId) continue;
+    const ex = entry.exercises.find((e) => e.name.trim().toLowerCase() === key);
+    if (ex && ex.sets.some(isCompletedSet)) {
+      return ex.sets.filter(isCompletedSet);
+    }
+  }
+  return null;
+}
+
+export function createDraftExercises(
+  program: ProgramExercise[],
+  entries: WorkoutEntry[]
+): DraftExercise[] {
+  return program.map((p) => {
+    const prev = findPreviousPerformance(entries, p.name);
+    const sets = Array.from({ length: p.targetSets }, (_, i) => {
+      const prevSet = prev?.[i] ?? prev?.[prev.length - 1];
+      return {
+        weight: prevSet ? String(prevSet.weight) : '',
+        reps: '',
+      };
+    });
+    return { name: p.name, sets };
+  });
+}
+
+/* ─── Progression series for charts ─── */
+
+export interface ProgressionPoint {
+  date: string;
+  label: string;
+  maxWeight: number;
+  estimated1RM: number;
+  tonnage: number;
+  repsFirst: number;
+  repsTotal: number;
+  repsAll: string;
+  bestSetText: string;
+}
+
+export function getProgressionSeries(entries: WorkoutEntry[], exerciseName: string): ProgressionPoint[] {
+  const key = exerciseName.trim().toLowerCase();
+  const chronological = sortEntriesChronological(entries);
+  const points: ProgressionPoint[] = [];
+
+  for (const entry of chronological) {
+    const ex = entry.exercises.find((e) => e.name.trim().toLowerCase() === key);
+    if (!ex || ex.sets.length === 0) continue;
+    const completed = ex.sets.filter(isCompletedSet);
+    if (completed.length === 0) continue;
+
+    const maxW = exerciseMaxWeight(ex);
+    const best1rm = exerciseBest1RM(ex);
+    const ton = Math.round(exerciseTonnage(ex));
+    const repsFirst = completed[0].reps;
+    const repsTotal = completed.reduce((sum, s) => sum + s.reps, 0);
+    const repsAll = completed.map((s) => String(s.reps)).join(' / ');
+
+    let bestSet = completed[0];
+    for (const s of completed) {
+      const s1rm = epley1RM(s.weight, s.reps);
+      const b1rm = epley1RM(bestSet.weight, bestSet.reps);
+      if (s1rm > b1rm || (s1rm === b1rm && s.reps > bestSet.reps)) {
+        bestSet = s;
+      }
+    }
+
+    points.push({
+      date: entry.date,
+      label: formatShortDate(entry.date),
+      maxWeight: maxW,
+      estimated1RM: best1rm,
+      tonnage: ton,
+      repsFirst,
+      repsTotal,
+      repsAll,
+      bestSetText: `${bestSet.weight}×${bestSet.reps}`,
+    });
+  }
+
+  return points;
+}
+
+/* ─── All exercise names from entries ─── */
+
+export function allExerciseNames(entries: WorkoutEntry[], programNames: string[] = []): string[] {
+  const map = new Map<string, string>();
+  for (const name of programNames) {
+    const t = name.trim();
+    if (t) map.set(t.toLowerCase(), t);
+  }
+  for (const entry of entries) {
+    for (const ex of entry.exercises) {
+      const t = ex.name.trim();
+      if (t && !map.has(t.toLowerCase())) map.set(t.toLowerCase(), t);
+    }
+  }
+  return Array.from(map.values());
+}
+
+/* ─── PR table ─── */
+
+export interface ExercisePR {
+  name: string;
+  maxWeight: number;
+  maxWeightDate: string;
+  maxWeightSet: string;
+  best1RM: number;
+  best1RMDate: string;
+  best1RMSet: string;
+  maxReps: number;
+  maxRepsSet: string;
+  maxRepsDate: string;
+  sessions: number;
+}
+
+export function getAllPRs(entries: WorkoutEntry[]): ExercisePR[] {
+  const map = new Map<string, ExercisePR>();
+  const sorted = sortEntriesChronological(entries);
+
+  for (const entry of sorted) {
+    for (const ex of entry.exercises) {
+      const key = ex.name.trim().toLowerCase();
+      if (!key) continue;
+      const completed = ex.sets.filter(isCompletedSet);
+      if (completed.length === 0) continue;
+
+      let pr = map.get(key);
+      if (!pr) {
+        pr = {
+          name: ex.name.trim(),
+          maxWeight: -1,
+          maxWeightDate: '',
+          maxWeightSet: '',
+          best1RM: 0,
+          best1RMDate: '',
+          best1RMSet: '',
+          maxReps: 0,
+          maxRepsSet: '',
+          maxRepsDate: '',
+          sessions: 0,
+        };
+        map.set(key, pr);
+      }
+      pr.sessions++;
+
+      for (const s of completed) {
+        if (s.weight > pr.maxWeight || (s.weight === pr.maxWeight && s.reps > parseInt(pr.maxWeightSet.split('×')[1] ?? '0', 10))) {
+          pr.maxWeight = s.weight;
+          pr.maxWeightDate = entry.date;
+          pr.maxWeightSet = `${s.weight}×${s.reps}`;
+        }
+        const e = epley1RM(s.weight, s.reps);
+        if (e > pr.best1RM) {
+          pr.best1RM = e;
+          pr.best1RMDate = entry.date;
+          pr.best1RMSet = `${s.weight}×${s.reps}`;
+        }
+        if (s.reps > pr.maxReps) {
+          pr.maxReps = s.reps;
+          pr.maxRepsSet = `${s.weight}×${s.reps}`;
+          pr.maxRepsDate = entry.date;
+        }
+      }
+    }
+  }
+
+  return Array.from(map.values())
+    .map((pr) => ({
+      ...pr,
+      maxWeight: Math.max(0, pr.maxWeight),
+      best1RMDate: pr.best1RMDate || pr.maxRepsDate,
+      best1RMSet: pr.best1RMSet || pr.maxRepsSet,
+    }))
+    .sort((a, b) => b.best1RM - a.best1RM || b.maxReps - a.maxReps);
+}
+
+/* ─── Summary KPIs ─── */
+
+export interface AnalyticsSummary {
+  total: number;
+  avgPerWeek: number;
+  monthTonnage: number;
+}
+
+export function computeAnalyticsSummary(entries: WorkoutEntry[], todayISO: string): AnalyticsSummary | null {
+  if (entries.length === 0) return null;
+  const sorted = sortEntriesChronological(entries);
+  const firstMs = parseISODateUTC(sorted[0].date);
+  const lastMs = parseISODateUTC(sorted[sorted.length - 1].date);
+  const spanDays = Math.max(0, Math.round((lastMs - firstMs) / 86400000));
+  const weeks = Math.max(1, Math.ceil((spanDays + 1) / 7));
+  const avg = entries.length / weeks;
+
+  const isoThirty = shiftISODate(todayISO, -30);
+  const monthTonnage = entries
+    .filter((e) => e.date >= isoThirty)
+    .reduce((t, e) => t + entryTonnage(e), 0);
+
+  return {
+    total: entries.length,
+    avgPerWeek: Math.round(avg * 10) / 10,
+    monthTonnage: Math.round(monthTonnage),
+  };
+}
+
+/* ─── Progression summary table ─── */
+
+export interface ProgressionRow {
+  name: string;
+  targetRange: string;
+  prevSets: string;
+  currSets: string;
+  delta: string;
+  deltaTone: 'positive' | 'negative' | 'neutral';
+  recommendation: string;
+  shouldIncrease: boolean;
+}
+
+export function getProgressionSummary(
+  entries: WorkoutEntry[],
+  program: ProgramExercise[]
+): ProgressionRow[] {
+  const sorted = sortEntriesNewestFirst(entries);
+  const rows: ProgressionRow[] = [];
+
+  for (const prog of program) {
+    const key = prog.name.trim().toLowerCase();
+    let curr: ExerciseEntry | undefined;
+    let prev: ExerciseEntry | undefined;
+
+    for (const entry of sorted) {
+      const found = entry.exercises.find((e) => e.name.trim().toLowerCase() === key);
+      if (found && found.sets.some(isCompletedSet)) {
+        const cleanedSets = found.sets.filter(isCompletedSet);
+        if (!curr) {
+          curr = { name: found.name, sets: cleanedSets };
+        } else if (!prev) {
+          prev = { name: found.name, sets: cleanedSets };
+          break;
+        }
+      }
+    }
+
+    const prevSets = prev ? formatSetsCompact(prev.sets) : '—';
+    const currSets = curr ? formatSetsCompact(curr.sets) : '—';
+
+    let delta = '—';
+    let deltaTone: ProgressionRow['deltaTone'] = 'neutral';
+    let recommendation = 'Нет записей';
+    let shouldIncrease = false;
+
+    if (curr && prev) {
+      const currMax = exerciseMaxWeight(curr);
+      const prevMax = exerciseMaxWeight(prev);
+      const weightDiff = Math.round((currMax - prevMax) * 100) / 100;
+      const currFirstReps = curr.sets[0]?.reps ?? 0;
+      const prevFirstReps = prev.sets[0]?.reps ?? 0;
+      const currTotalReps = curr.sets.reduce((s, x) => s + x.reps, 0);
+      const prevTotalReps = prev.sets.reduce((s, x) => s + x.reps, 0);
+      const firstRepsDiff = currFirstReps - prevFirstReps;
+      const totalRepsDiff = currTotalReps - prevTotalReps;
+
+      if (weightDiff !== 0) {
+        delta = `${weightDiff > 0 ? '+' : ''}${weightDiff} кг`;
+        deltaTone = weightDiff > 0 ? 'positive' : 'negative';
+      } else if (firstRepsDiff !== 0) {
+        delta = `${firstRepsDiff > 0 ? '+' : ''}${firstRepsDiff} повт.`;
+        deltaTone = firstRepsDiff > 0 ? 'positive' : 'negative';
+      } else if (totalRepsDiff !== 0) {
+        delta = `${totalRepsDiff > 0 ? '+' : ''}${totalRepsDiff} повт. (всего)`;
+        deltaTone = totalRepsDiff > 0 ? 'positive' : 'negative';
+      } else {
+        delta = '0';
+        deltaTone = 'neutral';
+      }
+
+      const status = checkDoubleProgression(curr.sets, prog);
+      if (status.shouldIncrease) {
+        recommendation = 'Пора повышать вес';
+        shouldIncrease = true;
+      } else if (curr.sets.some((s) => s.reps < prog.targetRepMin)) {
+        recommendation = `Удержи мин. ${prog.targetRepMin} повт.`;
+      } else if (currFirstReps < prog.targetRepMax) {
+        recommendation = `Добивай повторения до ${prog.targetRepMax}`;
+      } else if (curr.sets.length < prog.targetSets) {
+        recommendation = `Выполни все ${prog.targetSets} подхода`;
+      } else {
+        recommendation = 'Дотяни остальные подходы';
+      }
+    } else if (curr) {
+      const status = checkDoubleProgression(curr.sets, prog);
+      const currFirstReps = curr.sets[0]?.reps ?? 0;
+      if (status.shouldIncrease) {
+        recommendation = 'Пора повышать вес';
+        shouldIncrease = true;
+      } else if (currFirstReps < prog.targetRepMax) {
+        recommendation = `Добивай повторения до ${prog.targetRepMax}`;
+      } else {
+        recommendation = 'Первая запись — базовая точка';
+      }
+    }
+
+    rows.push({
+      name: prog.name,
+      targetRange: `${prog.targetSets}×${prog.targetRepMin}-${prog.targetRepMax}`,
+      prevSets,
+      currSets,
+      delta,
+      deltaTone,
+      recommendation,
+      shouldIncrease,
+    });
+  }
+
+  return rows;
 }
