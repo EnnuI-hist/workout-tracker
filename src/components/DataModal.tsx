@@ -72,7 +72,7 @@ function NumericField({
           setDraft(null);
         }
       }}
-      className="w-10 h-8 px-1 rounded-lg bg-[#141822] border border-slate-800 text-center text-xs text-white tabular-nums outline-none focus:border-blue-500"
+      className="w-10 h-8 px-1 rounded-lg bg-[#111827] border border-slate-800 text-center text-xs text-white tabular-nums outline-none focus:border-blue-500"
     />
   );
 }
@@ -161,7 +161,7 @@ export function DataModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-0 sm:p-4">
-      <div className="w-full sm:max-w-xl bg-[#141822] border border-slate-800 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+      <div className="w-full sm:max-w-xl bg-[#111827] border border-slate-800 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center">
@@ -181,13 +181,13 @@ export function DataModal({
         <div className="p-5 space-y-5 max-h-[82vh] overflow-y-auto">
           {/* Current DB stats */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-[#0e121b] border border-slate-800 p-3">
+            <div className="rounded-xl bg-[#0b0f19] border border-slate-800 p-3">
               <p className="text-xs text-slate-400">Записей в журнале</p>
               <p className="text-xl font-bold text-white tabular-nums mt-0.5">
                 {db.entries.length}
               </p>
             </div>
-            <div className="rounded-xl bg-[#0e121b] border border-slate-800 p-3">
+            <div className="rounded-xl bg-[#0b0f19] border border-slate-800 p-3">
               <p className="text-xs text-slate-400">Упражнений в активной</p>
               <p className="text-xl font-bold text-white tabular-nums mt-0.5">
                 {exercises.length}
@@ -230,7 +230,7 @@ export function DataModal({
                   }
                 }}
                 placeholder="Название новой программы (например, Верх / Низ)..."
-                className="flex-1 h-10 px-3 rounded-xl bg-[#0e121b] border border-slate-800 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-500"
+                className="flex-1 h-10 px-3 rounded-xl bg-[#0b0f19] border border-slate-800 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-500"
               />
               <button
                 type="button"
@@ -255,7 +255,7 @@ export function DataModal({
                       className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${
                         isActive
                           ? 'bg-blue-600/20 border-blue-500 text-blue-200'
-                          : 'bg-[#0e121b] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                          : 'bg-[#0b0f19] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                       }`}
                     >
                       <span>{prog.name || 'Без названия'}</span>
@@ -277,7 +277,7 @@ export function DataModal({
                   onChange={(e) => onRenameProgram(activeProgram.id, e.target.value)}
                   placeholder="Название программы..."
                   aria-label="Название активной программы"
-                  className="flex-1 h-9 px-3 rounded-xl bg-[#0e121b] border border-slate-800 text-xs font-semibold text-white outline-none focus:border-blue-500"
+                  className="flex-1 h-9 px-3 rounded-xl bg-[#0b0f19] border border-slate-800 text-xs font-semibold text-white outline-none focus:border-blue-500"
                 />
                 <button
                   type="button"
@@ -315,7 +315,7 @@ export function DataModal({
 
             {/* Exercise list for active program */}
             {activeProgram && showProgramEditor && (
-              <div className="rounded-xl bg-[#0e121b] border border-slate-800 p-3 space-y-2">
+              <div className="rounded-xl bg-[#0b0f19] border border-slate-800 p-3 space-y-2">
                 {exercises.length === 0 ? (
                   <p className="text-xs text-slate-500 text-center py-2">
                     В этой программе пока нет упражнений.
@@ -334,7 +334,7 @@ export function DataModal({
                         value={p.name}
                         placeholder="Название упражнения..."
                         onChange={(e) => updateProgramItem(idx, { name: e.target.value })}
-                        className="flex-1 min-w-[140px] h-8 px-2 rounded-lg bg-[#141822] border border-slate-800 text-xs text-white placeholder:text-slate-600 outline-none focus:border-blue-500"
+                        className="flex-1 min-w-[140px] h-8 px-2 rounded-lg bg-[#111827] border border-slate-800 text-xs text-white placeholder:text-slate-600 outline-none focus:border-blue-500"
                       />
                       <div className="flex items-center gap-1 shrink-0 text-[11px] text-slate-400">
                         <NumericField
@@ -412,7 +412,7 @@ export function DataModal({
                   className={`h-11 rounded-xl border text-sm font-semibold transition ${
                     db.settings.weightStep === step
                       ? 'bg-blue-600/20 border-blue-500 text-blue-300'
-                      : 'bg-[#0e121b] border-slate-800 text-slate-400 hover:text-slate-200'
+                      : 'bg-[#0b0f19] border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   + {step} кг
@@ -445,7 +445,7 @@ export function DataModal({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="h-11 px-4 rounded-xl bg-[#0e121b] hover:bg-slate-800 border border-slate-700 text-slate-200 text-sm font-semibold flex items-center justify-center gap-2 transition"
+                className="h-11 px-4 rounded-xl bg-[#0b0f19] hover:bg-slate-800 border border-slate-700 text-slate-200 text-sm font-semibold flex items-center justify-center gap-2 transition"
               >
                 <Upload className="w-4 h-4" />
                 Импорт из JSON

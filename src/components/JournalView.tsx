@@ -106,7 +106,7 @@ export function JournalView({
 
   if (entries.length === 0) {
     return (
-      <div className="rounded-2xl bg-[#141822] border border-dashed border-slate-800 p-10 text-center space-y-2">
+      <div className="rounded-2xl bg-[#111827] border border-dashed border-slate-800 p-10 text-center space-y-2">
         <p className="text-sm font-medium text-slate-300">Журнал записей пуст.</p>
         <p className="text-xs text-slate-500">
           Перейдите во вкладку «Запись» и сохраните первую тренировку.
@@ -133,14 +133,14 @@ export function JournalView({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Поиск по дате, упражнению..."
-              className="w-full h-9 pl-8 pr-3 rounded-xl bg-[#141822] border border-slate-800 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-500/60"
+              className="w-full h-9 pl-8 pr-3 rounded-xl bg-[#111827] border border-slate-800 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-500/60"
             />
           </div>
         )}
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-2xl bg-[#141822] border border-slate-800 p-8 text-center text-xs text-slate-400">
+        <div className="rounded-2xl bg-[#111827] border border-slate-800 p-8 text-center text-xs text-slate-400">
           Ничего не найдено по запросу «{searchQuery}».
         </div>
       ) : (
@@ -214,7 +214,7 @@ function EntryCard({
   const tonnage = Math.round(entryTonnage(entry));
 
   return (
-    <article className="rounded-2xl bg-[#141822] border border-slate-800/90 overflow-hidden">
+    <article className="rounded-2xl bg-[#111827] border border-slate-800/90 overflow-hidden">
       {/* Note Header */}
       <div className="px-4 py-3 bg-[#111520] border-b border-slate-800/70 flex flex-wrap items-center justify-between gap-2">
         <div className="space-y-0.5">
@@ -240,7 +240,7 @@ function EntryCard({
             className={`h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition ${
               isCopied
                 ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
-                : 'bg-[#0b0e14] hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
+                : 'bg-[#0b0f19] hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
             }`}
           >
             {isCopied ? <Check className="w-3.5 h-3.5" /> : <ClipboardCopy className="w-3.5 h-3.5" />}
@@ -255,7 +255,7 @@ function EntryCard({
             onClick={onEdit}
             title="Редактировать запись"
             aria-label="Редактировать запись"
-            className="w-8 h-8 rounded-lg bg-[#0b0e14] hover:bg-slate-800 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-blue-400 transition"
+            className="w-8 h-8 rounded-lg bg-[#0b0f19] hover:bg-slate-800 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-blue-400 transition"
           >
             <Edit3 className="w-3.5 h-3.5" />
           </button>
@@ -283,7 +283,7 @@ function EntryCard({
               onClick={onDelete}
               title="Удалить запись"
               aria-label="Удалить запись"
-              className="w-8 h-8 rounded-lg bg-[#0b0e14] hover:bg-rose-500/10 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-400 transition"
+              className="w-8 h-8 rounded-lg bg-[#0b0f19] hover:bg-rose-500/10 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-400 transition"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -444,7 +444,7 @@ function EditModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-0 sm:p-4">
-      <div className="w-full sm:max-w-2xl bg-[#141822] border border-slate-800 rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden">
+      <div className="w-full sm:max-w-2xl bg-[#111827] border border-slate-800 rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
           <h3 className="text-base font-bold text-white">Редактировать запись</h3>
           <button
@@ -470,7 +470,7 @@ function EditModal({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="h-10 px-3 rounded-xl bg-[#0b0e14] border border-slate-700/80 text-sm text-white outline-none focus:border-blue-500"
+                className="h-10 px-3 rounded-xl bg-[#0b0f19] border border-slate-700/80 text-sm text-white outline-none focus:border-blue-500"
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -480,13 +480,13 @@ function EditModal({
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Необязательно..."
-                className="h-10 px-3 rounded-xl bg-[#0b0e14] border border-slate-700/80 text-sm text-white outline-none focus:border-blue-500"
+                className="h-10 px-3 rounded-xl bg-[#0b0f19] border border-slate-700/80 text-sm text-white outline-none focus:border-blue-500"
               />
             </label>
           </div>
 
           {exercises.map((ex, exIdx) => (
-            <div key={exIdx} className="rounded-xl bg-[#0e121b] border border-slate-800 p-3 space-y-2">
+            <div key={exIdx} className="rounded-xl bg-[#0b0f19] border border-slate-800 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <input
                   type="text"
@@ -518,9 +518,9 @@ function EditModal({
                       value={s.weight}
                       onChange={(e) => updateExSet(exIdx, sIdx, 'weight', e.target.value)}
                       placeholder="0"
-                      className="w-[50px] h-8 px-1.5 rounded-l-lg bg-[#141822] border border-slate-700/80 border-r-0 text-center text-xs font-semibold text-white outline-none focus:border-blue-500 tabular-nums"
+                      className="w-[50px] h-8 px-1.5 rounded-l-lg bg-[#111827] border border-slate-700/80 border-r-0 text-center text-xs font-semibold text-white outline-none focus:border-blue-500 tabular-nums"
                     />
-                    <span className="h-8 flex items-center px-0.5 bg-[#141822] border-y border-slate-700/80 text-[10px] text-slate-500">
+                    <span className="h-8 flex items-center px-0.5 bg-[#111827] border-y border-slate-700/80 text-[10px] text-slate-500">
                       ×
                     </span>
                     <input
@@ -529,7 +529,7 @@ function EditModal({
                       value={s.reps}
                       onChange={(e) => updateExSet(exIdx, sIdx, 'reps', e.target.value)}
                       placeholder="повт"
-                      className="w-[42px] h-8 px-1.5 rounded-r-lg bg-[#141822] border border-slate-700/80 border-l-0 text-center text-xs font-semibold text-white outline-none focus:border-blue-500 tabular-nums"
+                      className="w-[42px] h-8 px-1.5 rounded-r-lg bg-[#111827] border border-slate-700/80 border-l-0 text-center text-xs font-semibold text-white outline-none focus:border-blue-500 tabular-nums"
                     />
                     {ex.sets.length > 1 && (
                       <button
@@ -545,7 +545,7 @@ function EditModal({
                 <button
                   type="button"
                   onClick={() => addExSet(exIdx)}
-                  className="w-7 h-7 rounded-lg bg-[#141822] border border-dashed border-slate-700 text-slate-400 hover:text-blue-400 flex items-center justify-center"
+                  className="w-7 h-7 rounded-lg bg-[#111827] border border-dashed border-slate-700 text-slate-400 hover:text-blue-400 flex items-center justify-center"
                 >
                   <Plus className="w-3 h-3" />
                 </button>

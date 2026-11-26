@@ -7,7 +7,8 @@
 
   body {
     margin: 0;
-    background-color: #0b0d12;
+    background-color: #090d16;
+    background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(59, 130, 246, 0.08), transparent);
     color: #f1f5f9;
     font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     -webkit-tap-highlight-color: transparent;
@@ -24,6 +25,36 @@
   }
 }
 
+@keyframes set-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes toast-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-set-pop {
+  animation: set-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-toast-in {
+  animation: toast-in 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* Custom sleek scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -31,14 +62,14 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0d12;
+  background: #090d16;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #262c3d;
+  background: #1e293b;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3b445e;
+  background: #334155;
 }

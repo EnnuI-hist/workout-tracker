@@ -72,7 +72,7 @@ export function AnalyticsView({ entries, program }: AnalyticsViewProps) {
 
   if (entries.length === 0) {
     return (
-      <div className="rounded-2xl bg-[#141822] border border-slate-800 p-10 text-center space-y-2">
+      <div className="rounded-2xl bg-[#111827] border border-slate-800 p-10 text-center space-y-2">
         <BarChart3 className="w-8 h-8 text-slate-600 mx-auto" />
         <p className="text-sm font-medium text-slate-300">
           Пока нет данных для аналитики.
@@ -96,7 +96,7 @@ export function AnalyticsView({ entries, program }: AnalyticsViewProps) {
       {/* KPI */}
       {summary && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="rounded-2xl bg-[#141822] border border-slate-800/90 p-4 space-y-1">
+          <div className="rounded-2xl bg-[#111827] border border-slate-800/90 p-4 space-y-1">
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span>Всего тренировок</span>
               <Calendar className="w-4 h-4 text-sky-400" />
@@ -104,7 +104,7 @@ export function AnalyticsView({ entries, program }: AnalyticsViewProps) {
             <p className="text-2xl font-bold text-white tabular-nums">{summary.total}</p>
             <p className="text-[11px] text-slate-500">в журнале</p>
           </div>
-          <div className="rounded-2xl bg-[#141822] border border-slate-800/90 p-4 space-y-1">
+          <div className="rounded-2xl bg-[#111827] border border-slate-800/90 p-4 space-y-1">
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span>Регулярность</span>
               <TrendingUp className="w-4 h-4 text-emerald-400" />
@@ -112,7 +112,7 @@ export function AnalyticsView({ entries, program }: AnalyticsViewProps) {
             <p className="text-2xl font-bold text-white tabular-nums">{summary.avgPerWeek}</p>
             <p className="text-[11px] text-slate-500">трен. в неделю в среднем</p>
           </div>
-          <div className="rounded-2xl bg-[#141822] border border-slate-800/90 p-4 space-y-1">
+          <div className="rounded-2xl bg-[#111827] border border-slate-800/90 p-4 space-y-1">
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span>Тоннаж за месяц</span>
               <Award className="w-4 h-4 text-amber-400" />
@@ -126,7 +126,7 @@ export function AnalyticsView({ entries, program }: AnalyticsViewProps) {
       )}
 
       {/* Exercise chart */}
-      <section className="rounded-2xl bg-[#141822] border border-slate-800/90 p-4 sm:p-5 space-y-4">
+      <section className="rounded-2xl bg-[#111827] border border-slate-800/90 p-4 sm:p-5 space-y-4">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
           <div className="space-y-1.5 flex-1">
             <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 block">
@@ -137,7 +137,7 @@ export function AnalyticsView({ entries, program }: AnalyticsViewProps) {
               <select
                 value={selectedExercise}
                 onChange={(e) => setSelectedExercise(e.target.value)}
-                className="w-full h-10 pl-9 pr-4 rounded-xl bg-[#0b0e14] border border-slate-700/80 text-sm font-semibold text-white outline-none focus:border-blue-500"
+                className="w-full h-10 pl-9 pr-4 rounded-xl bg-[#0b0f19] border border-slate-700/80 text-sm font-semibold text-white outline-none focus:border-blue-500"
               >
                 {exerciseNames.map((n) => (
                   <option key={n} value={n}>
@@ -164,7 +164,7 @@ export function AnalyticsView({ entries, program }: AnalyticsViewProps) {
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
                   metricTab === t.id
                     ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-[#0b0e14] text-slate-400 hover:text-slate-200 border border-slate-800'
+                    : 'bg-[#0b0f19] text-slate-400 hover:text-slate-200 border border-slate-800'
                 }`}
               >
                 {t.label}
@@ -270,7 +270,7 @@ export function AnalyticsView({ entries, program }: AnalyticsViewProps) {
       </section>
 
       {/* Progression summary table */}
-      <section className="rounded-2xl bg-[#141822] border border-slate-800/90 p-4 sm:p-5 space-y-3">
+      <section className="rounded-2xl bg-[#111827] border border-slate-800/90 p-4 sm:p-5 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <ArrowUpRight className="w-5 h-5 text-emerald-400" />
@@ -342,7 +342,7 @@ export function AnalyticsView({ entries, program }: AnalyticsViewProps) {
       </section>
 
       {/* PRs */}
-      <section className="rounded-2xl bg-[#141822] border border-slate-800/90 p-4 sm:p-5 space-y-3">
+      <section className="rounded-2xl bg-[#111827] border border-slate-800/90 p-4 sm:p-5 space-y-3">
         <div className="flex items-center gap-2">
           <Award className="w-5 h-5 text-amber-400" />
           <h3 className="text-base font-bold text-white">Личные рекорды (PR)</h3>
@@ -437,7 +437,7 @@ function ChartTooltip({
   if (!point) return null;
 
   return (
-    <div className="rounded-xl bg-[#0b0e14]/95 border border-slate-700 px-3 py-2.5 shadow-xl text-xs space-y-1">
+    <div className="rounded-xl bg-[#0b0f19]/95 border border-slate-700 px-3 py-2.5 shadow-xl text-xs space-y-1">
       <p className="font-semibold text-slate-200">{formatFullDate(point.date)}</p>
       {mode === 'maxWeight' && (
         <p className="text-blue-300 font-bold tabular-nums">

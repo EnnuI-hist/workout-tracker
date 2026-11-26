@@ -1,19 +1,24 @@
 import {
+  Activity,
   AlertCircle,
   AlignLeft,
   ArrowRightLeft,
   Check,
+  Dumbbell,
   Eraser,
   FileText,
+  Flame,
   History,
+  Layers,
   Plus,
   RefreshCw,
   Save,
+  Sparkles,
   Trash2,
   TrendingUp,
   X,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type {
   DraftExercise,
   ExerciseEntry,
@@ -25,10 +30,14 @@ import type {
 import {
   checkDoubleProgression,
   createDraftExercises,
+  entryTonnage,
   findPreviousPerformance,
+  formatFullDate,
+  formatNum,
   formatSetsCompact,
   generateId,
   getTodayISO,
+  sortEntriesNewestFirst,
 } from '../utils/calculations.ts';
 import { DEFAULT_PROGRAM } from '../utils/defaultProgram.ts';
 import { matchToProgramName, parseWorkoutTextDetailed } from '../utils/textParser.ts';
@@ -67,6 +76,8 @@ export function WorkoutEntryForm({
   onSave,
   onNotify,
 }: WorkoutEntryFormProps) {
+  const [isSavingAnim, setIsSavingAnim] = useState(false);
+
   const programMap = useMemo(() => {
     const map = new Map<string, ProgramExercise>();
     for (const p of program) map.set(p.name.toLowerCase(), p);
@@ -84,6 +95,11 @@ export function WorkoutEntryForm({
     return map;
   }, [entries, program]);
 
+  const lastWorkout = useMemo(() => {
+    if (entries.length === 0) return null;
+    return sortEntriesNewestFirst(entries)[0] ?? null;
+  }, [entries]);
+
   const programDiffersFromDefault = useMemo(() => {
     if (program.length !== DEFAULT_PROGRAM.length) return true;
     return program.some(
@@ -97,7 +113,11 @@ export function WorkoutEntryForm({
 
   const parsedTextPreview = useMemo(() => {
     if (!draft.textMode || !draft.rawText.trim()) {
-      return { exercises: [] as Array<ExerciseEntry & { matchedFrom?: string }>, unparsedLines: [] as string[], detectedNotes: undefined as string | undefined };
+      return {
+        exercises: [] as Array<ExerciseEntry & { matchedFrom?: string }>,
+        unparsedLines: [] as string[],
+        detectedNotes: undefined as string | undefined,
+      };
     }
     const res = parseWorkoutTextDetailed(draft.rawText);
     const mapped = res.exercises.map((ex) => {
@@ -111,13 +131,70 @@ export function WorkoutEntryForm({
     return { exercises: mapped, unparsedLines: res.unparsedLines, detectedNotes: res.detectedNotes };
   }, [draft.textMode, draft.rawText, programNames]);
 
-  const filledTableExercisesCount = useMemo(() => {
-    return draft.exercises.filter((ex) => ex.name.trim().length > 0 && parseDraftSets(ex.sets).length > 0).length;
-  }, [draft.exercises]);
+  /* ─── Live summary metrics (real-time for both modes) ─── */
 
-  const activeExercisesCount = draft.textMode
-    ? parsedTextPreview.exercises.length
-    : filledTableExercisesCount;
+  const liveSummary = useMemo(() => {
+    let completedSets = 0;
+    let totalTonnage = 0;
+    let filledExercises = 0;
+    const progressionHints: Array<{ name: string; source: 'current' | 'previous' }> = [];
+
+    if (draft.textMode) {
+      filledExercises = parsedTextPreview.exercises.length;
+      for (const ex of parsedTextPreview.exercises) {
+        completedSets += ex.sets.length;
+        for (const s of ex.sets) {
+          totalTonnage += s.weight * s.reps;
+        }
+        const prog = programMap.get(ex.name.trim().toLowerCase());
+        if (checkDoubleProgression(ex.sets, prog).shouldIncrease) {
+          progressionHints.push({ name: ex.name, source: 'current' });
+        }
+      }
+    } else {
+      for (const ex of draft.exercises) {
+        const name = ex.name.trim();
+        const currentSets = parseDraftSets(ex.sets);
+        if (name && currentSets.length > 0) {
+          filledExercises++;
+          completedSets += currentSets.length;
+          for (const s of currentSets) {
+            totalTonnage += s.weight * s.reps;
+          }
+        }
+
+        if (name) {
+          const prog = programMap.get(name.toLowerCase());
+          const prev = previousMap.get(name.toLowerCase());
+          const dp = checkDoubleProgression(currentSets, prog);
+          const dpPrev = prev ? checkDoubleProgression(prev, prog) : null;
+          const prevMaxW = prev ? Math.max(...prev.map((s) => s.weight)) : 0;
+          const currMaxW = currentSets.length > 0 ? Math.max(...currentSets.map((s) => s.weight)) : 0;
+          const alreadyRaised = prev !== undefined && currentSets.length > 0 && currMaxW > prevMaxW;
+
+          if (dp.shouldIncrease) {
+            progressionHints.push({ name, source: 'current' });
+          } else if (dpPrev?.shouldIncrease && !alreadyRaised) {
+            progressionHints.push({ name, source: 'previous' });
+          }
+        }
+      }
+    }
+
+    const totalTarget = draft.textMode
+      ? Math.max(program.length, filledExercises)
+      : draft.exercises.length;
+    const progressPct = totalTarget > 0 ? Math.min(100, Math.round((filledExercises / totalTarget) * 100)) : 0;
+
+    return {
+      filledExercises,
+      totalTarget,
+      progressPct,
+      completedSets,
+      totalTonnage: Math.round(totalTonnage),
+      progressionHints,
+    };
+  }, [draft.textMode, draft.exercises, parsedTextPreview.exercises, program.length, programMap, previousMap]);
 
   /* ─── Handlers ─── */
 
@@ -234,7 +311,6 @@ export function WorkoutEntryForm({
       exercises: prev.exercises.map((ex) => {
         const prevSets = findPreviousPerformance(entries, ex.name);
         if (!prevSets || prevSets.length === 0) return ex;
-        // Only fill rows that don't have entered reps yet
         if (parseDraftSets(ex.sets).length > 0) return ex;
         return {
           ...ex,
@@ -367,6 +443,9 @@ export function WorkoutEntryForm({
       return;
     }
 
+    setIsSavingAnim(true);
+    window.setTimeout(() => setIsSavingAnim(false), 320);
+
     onSave({
       id: generateId(),
       date: draft.date || getTodayISO(),
@@ -377,13 +456,17 @@ export function WorkoutEntryForm({
   };
 
   return (
-    <div className="space-y-3.5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="space-y-5">
+      {/* Top Bar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Новая запись тренировки</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+            Новая запись тренировки
+          </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Full-Body · {program.length} упр. · Введите повторения или переключитесь на текстовый ввод
+            {program.length > 0
+              ? `Активная программа · ${program.length} упр.`
+              : 'Свободная запись · выберите или создайте программу в «Программа / JSON»'}
           </p>
         </div>
 
@@ -393,16 +476,16 @@ export function WorkoutEntryForm({
             value={draft.date}
             onChange={(e) => onChangeDraft((prev) => ({ ...prev, date: e.target.value }))}
             aria-label="Дата тренировки"
-            className="h-9 px-3 rounded-xl bg-[#141822] border border-slate-800 text-xs font-medium text-slate-200 outline-none focus:border-blue-500"
+            className="h-9 px-3 rounded-xl bg-[#111827] border border-white/10 text-xs font-medium text-slate-200 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 transition"
           />
 
-          <div className="inline-flex rounded-xl bg-[#141822] border border-slate-800 p-0.5">
+          <div className="inline-flex rounded-xl bg-[#111827] border border-white/10 p-0.5">
             <button
               type="button"
               onClick={() => onChangeDraft((prev) => ({ ...prev, textMode: false }))}
-              className={`h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+              className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
                 !draft.textMode
-                  ? 'bg-blue-600 text-white shadow-sm'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -412,9 +495,9 @@ export function WorkoutEntryForm({
             <button
               type="button"
               onClick={() => onChangeDraft((prev) => ({ ...prev, textMode: true }))}
-              className={`h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+              className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
                 draft.textMode
-                  ? 'bg-blue-600 text-white shadow-sm'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -425,364 +508,577 @@ export function WorkoutEntryForm({
         </div>
       </div>
 
-      {/* Notes + Quick tools */}
-      <div className="flex flex-col md:flex-row gap-2">
-        <input
-          type="text"
-          value={draft.notes}
-          onChange={(e) => onChangeDraft((prev) => ({ ...prev, notes: e.target.value }))}
-          placeholder="Заметка к тренировке (самочувствие, нюансы — необязательно)..."
-          className="flex-1 h-9 px-3.5 rounded-xl bg-[#141822] border border-slate-800 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-500/60"
-        />
-
-        {!draft.textMode && (
-          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-            <span className="h-9 px-2.5 rounded-xl bg-[#141822] border border-slate-800/80 text-[11px] font-semibold text-slate-400 flex items-center tabular-nums">
-              Заполнено: <span className="text-slate-200 ml-1">{filledTableExercisesCount}</span>/{draft.exercises.length}
-            </span>
-            {entries.length > 0 && (
-              <button
-                type="button"
-                onClick={handleFillAllFromPrevious}
-                title="Заполнить пустые упражнения результатами прошлой тренировки"
-                className="h-9 px-2.5 rounded-xl bg-[#141822] hover:bg-slate-800 border border-slate-800 text-[11px] font-semibold text-slate-300 flex items-center gap-1.5 transition"
-              >
-                <History className="w-3.5 h-3.5 text-blue-400" />
-                <span className="hidden sm:inline">Как в прошлый раз</span>
-                <span className="sm:hidden">Прошлая</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleClearTable}
-              title="Очистить введённые повторения"
-              className="h-9 px-2.5 rounded-xl bg-[#141822] hover:bg-slate-800 border border-slate-800 text-[11px] font-semibold text-slate-400 hover:text-slate-200 flex items-center gap-1 transition"
-            >
-              <Eraser className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Очистить</span>
-            </button>
-            {programDiffersFromDefault && (
-              <button
-                type="button"
-                onClick={onLoadDefaultProgram}
-                className="h-9 px-2.5 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/35 text-[11px] font-semibold text-emerald-300 flex items-center gap-1 transition"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Загрузить мою программу</span>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {draft.textMode ? (
-        /* ─── Quick Text Input Mode ─── */
-        <div className="space-y-3">
-          <div className="rounded-2xl bg-[#141822] border border-slate-800 p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-xs font-semibold text-slate-300">
-                Вставьте или введите тренировку текстом (1 упражнение = 1 строка):
-              </label>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleInsertTextTemplate}
-                  className="h-7 px-2.5 rounded-lg bg-[#0b0e14] hover:bg-slate-800 border border-slate-700/80 text-[11px] font-semibold text-slate-300 transition"
-                >
-                  Вставить шаблон (13 упр.)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCopyTableToText}
-                  className="h-7 px-2.5 rounded-lg bg-[#0b0e14] hover:bg-slate-800 border border-slate-700/80 text-[11px] font-semibold text-slate-300 transition"
-                >
-                  Из таблицы
-                </button>
-                {draft.rawText && (
-                  <button
-                    type="button"
-                    onClick={() => onChangeDraft((prev) => ({ ...prev, rawText: '' }))}
-                    className="h-7 px-2 rounded-lg bg-[#0b0e14] hover:bg-slate-800 border border-slate-800 text-[11px] text-slate-400 hover:text-rose-300 transition"
-                  >
-                    Очистить
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <textarea
-              value={draft.rawText}
-              onChange={(e) => onChangeDraft((prev) => ({ ...prev, rawText: e.target.value }))}
-              rows={13}
-              placeholder={`Тяга вертикального блока: 60x10, 60x9, 60x8\nЖим гантелей на наклонной скамье: 20x10, 20x9\nТяга в рычажном хаммере: 50x12, 50x10, 50x10\nСкручивания: 15, 15, 15\n...`}
-              className="w-full bg-[#0b0e14] border border-slate-800 rounded-xl px-3.5 py-3 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-500/60 font-mono leading-relaxed resize-y min-h-[160px]"
+      {/* 2-Column Desktop Layout (70% / 30%) */}
+      <div className="grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-5 items-start">
+        {/* ─── Left Column: Workout Cards / Quick Text ─── */}
+        <div className="space-y-3.5 min-w-0">
+          {/* Notes + Quick tools */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={draft.notes}
+              onChange={(e) => onChangeDraft((prev) => ({ ...prev, notes: e.target.value }))}
+              placeholder="Заметка к тренировке (самочувствие, нюансы — необязательно)..."
+              className="flex-1 h-10 px-3.5 rounded-xl bg-[#111827] border border-white/10 text-xs sm:text-sm text-white placeholder:text-slate-500 outline-none focus:bg-[#0b0f19] focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/30 transition"
             />
 
-            <p className="text-[11px] text-slate-500">
-              Поддерживаются разделители <code className="text-slate-400">:</code>,{' '}
-              <code className="text-slate-400">—</code>, <code className="text-slate-400"> - </code> и записи{' '}
-              <code className="text-slate-400">60x10</code>, <code className="text-slate-400">60×10</code>,{' '}
-              <code className="text-slate-400">60*10</code> (для упражнений без веса можно писать просто{' '}
-              <code className="text-slate-400">15, 15, 14</code>).
-            </p>
-          </div>
-
-          {/* Live parse preview */}
-          {(parsedTextPreview.exercises.length > 0 || parsedTextPreview.unparsedLines.length > 0) && (
-            <div className="rounded-2xl bg-[#141822] border border-slate-800/90 p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-bold text-white">
-                    Распознано упражнений: {parsedTextPreview.exercises.length}
-                  </span>
-                </div>
-                {parsedTextPreview.exercises.length > 0 && (
+            {!draft.textMode && (
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                {entries.length > 0 && draft.exercises.length > 0 && (
                   <button
                     type="button"
-                    onClick={handleApplyTextToTable}
-                    className="h-7 px-2.5 rounded-lg bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/35 text-[11px] font-semibold text-blue-300 flex items-center gap-1 transition"
+                    onClick={handleFillAllFromPrevious}
+                    title="Заполнить пустые упражнения результатами прошлой тренировки"
+                    className="h-10 px-3 rounded-xl bg-[#111827] hover:bg-[#172033] border border-white/10 hover:border-white/20 text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition"
                   >
-                    <ArrowRightLeft className="w-3 h-3" />
-                    Открыть в таблице
+                    <History className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="hidden sm:inline">Как в прошлый раз</span>
+                    <span className="sm:hidden">Прошлая</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleClearTable}
+                  title="Очистить введённые повторения"
+                  className="h-10 px-3 rounded-xl bg-[#111827] hover:bg-[#172033] border border-white/10 hover:border-white/20 text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center gap-1.5 transition"
+                >
+                  <Eraser className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Очистить</span>
+                </button>
+                {programDiffersFromDefault && (
+                  <button
+                    type="button"
+                    onClick={onLoadDefaultProgram}
+                    className="h-10 px-3 rounded-xl bg-emerald-500/12 hover:bg-emerald-500/20 border border-emerald-400/35 text-xs font-semibold text-emerald-300 flex items-center gap-1.5 transition"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Загрузить мою программу</span>
                   </button>
                 )}
               </div>
+            )}
+          </div>
 
-              {parsedTextPreview.exercises.length > 0 && (
-                <div className="divide-y divide-slate-800/70 rounded-xl bg-[#0b0e14] border border-slate-800/80">
-                  {parsedTextPreview.exercises.map((ex, i) => {
-                    const prog = programMap.get(ex.name.toLowerCase());
-                    const dp = checkDoubleProgression(ex.sets, prog);
-                    return (
-                      <div key={`${ex.name}-${i}`} className="px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-slate-200 font-medium">{ex.name}</span>
-                          {ex.matchedFrom && (
-                            <span className="text-[10px] text-slate-500">
-                              (из «{ex.matchedFrom}»)
-                            </span>
-                          )}
-                          {dp.shouldIncrease && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold">
-                              + Вес
-                            </span>
-                          )}
-                        </div>
-                        <span className="font-mono text-slate-300 tabular-nums">
-                          {formatSetsCompact(ex.sets)}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {parsedTextPreview.unparsedLines.length > 0 && (
-                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 space-y-1">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-300">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>Не распознаны строки ({parsedTextPreview.unparsedLines.length}):</span>
-                  </div>
-                  <ul className="text-[11px] text-amber-200/80 font-mono space-y-0.5 pl-5 list-disc">
-                    {parsedTextPreview.unparsedLines.map((line, idx) => (
-                      <li key={idx}>{line}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* ─── Table / Compact Notebook Mode ─── */
-        <div className="rounded-2xl bg-[#141822] border border-slate-800/90 divide-y divide-slate-800/70 overflow-hidden">
-          {draft.exercises.map((ex, exIdx) => {
-            const prog = programMap.get(ex.name.trim().toLowerCase());
-            const prev = previousMap.get(ex.name.trim().toLowerCase());
-            const isProgramExercise = Boolean(prog);
-
-            const currentSets = parseDraftSets(ex.sets);
-            const dp = checkDoubleProgression(currentSets, prog);
-            const dpPrev = prev ? checkDoubleProgression(prev, prog) : null;
-
-            const prevMaxW = prev ? Math.max(...prev.map((s) => s.weight)) : 0;
-            const currMaxW = currentSets.length > 0 ? Math.max(...currentSets.map((s) => s.weight)) : 0;
-            const alreadyRaisedWeight = prev !== undefined && currentSets.length > 0 && currMaxW > prevMaxW;
-
-            const showBadge = dp.shouldIncrease || Boolean(dpPrev?.shouldIncrease && !alreadyRaisedWeight);
-            const badgeTitle = dp.shouldIncrease
-              ? `${dp.reason}. Нажми, чтобы прибавить +${weightStep} кг`
-              : `Прошлая тренировка: ${dpPrev?.reason ?? ''}. Нажми, чтобы прибавить +${weightStep} кг`;
-
-            return (
-              <div
-                key={`${exIdx}-${isProgramExercise ? ex.name : 'custom'}`}
-                className={`px-3 sm:px-4 py-2.5 flex flex-col lg:flex-row lg:items-center gap-2 lg:gap-3 transition-colors ${
-                  showBadge ? 'bg-emerald-500/[0.06]' : 'hover:bg-slate-800/20'
-                }`}
-              >
-                {/* Left: Index + Name + Target Range + Badge */}
-                <div className="lg:w-[290px] shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="text-[11px] font-mono text-slate-600 w-5 text-right select-none shrink-0">
-                    {exIdx + 1}.
-                  </span>
-
-                  {isProgramExercise ? (
-                    <span className="text-[13px] sm:text-sm font-semibold text-white leading-snug">
-                      {ex.name}
-                    </span>
-                  ) : (
-                    <div className="flex items-center gap-1 flex-1 min-w-[160px]">
-                      <input
-                        type="text"
-                        value={ex.name}
-                        onChange={(e) => updateExerciseName(exIdx, e.target.value)}
-                        placeholder="Название упражнения..."
-                        className="flex-1 h-7 px-2 rounded-lg bg-[#0b0e14] border border-slate-700/80 text-xs font-semibold text-white outline-none focus:border-blue-500"
-                      />
+          {draft.textMode ? (
+            /* ─── Quick Text Input Mode ─── */
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-[#111827] border border-white/10 p-4 sm:p-5 space-y-3 shadow-lg shadow-black/20">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-semibold text-slate-300">
+                    Вставьте или введите тренировку текстом (1 упражнение = 1 строка):
+                  </label>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {program.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => removeCustomExercise(exIdx)}
-                        title="Удалить упражнение из записи"
-                        className="w-6 h-6 rounded text-slate-500 hover:text-rose-400 flex items-center justify-center"
+                        onClick={handleInsertTextTemplate}
+                        className="h-7 px-2.5 rounded-lg bg-[#0b0f19] hover:bg-slate-800 border border-white/10 text-[11px] font-semibold text-slate-300 transition"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        Вставить шаблон ({program.length} упр.)
                       </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleCopyTableToText}
+                      className="h-7 px-2.5 rounded-lg bg-[#0b0f19] hover:bg-slate-800 border border-white/10 text-[11px] font-semibold text-slate-300 transition"
+                    >
+                      Из таблицы
+                    </button>
+                    {draft.rawText && (
+                      <button
+                        type="button"
+                        onClick={() => onChangeDraft((prev) => ({ ...prev, rawText: '' }))}
+                        className="h-7 px-2 rounded-lg bg-[#0b0f19] hover:bg-slate-800 border border-white/10 text-[11px] text-slate-400 hover:text-rose-300 transition"
+                      >
+                        Очистить
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <textarea
+                  value={draft.rawText}
+                  onChange={(e) => onChangeDraft((prev) => ({ ...prev, rawText: e.target.value }))}
+                  rows={13}
+                  placeholder={`Тяга вертикального блока: 60x10, 60x9, 60x8\nЖим гантелей на наклонной скамье: 20x10, 20x9\nТяга в рычажном хаммере: 50x12, 50x10, 50x10\nСкручивания: 15, 15, 15\n...`}
+                  className="w-full bg-[#0b0f19] border border-white/10 rounded-xl px-3.5 py-3 text-sm text-white placeholder:text-slate-600 outline-none focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/30 font-mono leading-relaxed resize-y min-h-[180px] transition"
+                />
+
+                <p className="text-[11px] text-slate-500">
+                  Поддерживаются разделители <code className="text-slate-400">:</code>,{' '}
+                  <code className="text-slate-400">—</code>, <code className="text-slate-400"> - </code> и записи{' '}
+                  <code className="text-slate-400">60x10</code>, <code className="text-slate-400">60×10</code>,{' '}
+                  <code className="text-slate-400">60*10</code> (для упражнений без веса можно писать просто{' '}
+                  <code className="text-slate-400">15, 15, 14</code>).
+                </p>
+              </div>
+
+              {(parsedTextPreview.exercises.length > 0 || parsedTextPreview.unparsedLines.length > 0) && (
+                <div className="rounded-2xl bg-[#111827] border border-white/10 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span className="text-xs font-bold text-white">
+                        Распознано упражнений: {parsedTextPreview.exercises.length}
+                      </span>
+                    </div>
+                    {parsedTextPreview.exercises.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleApplyTextToTable}
+                        className="h-7 px-2.5 rounded-lg bg-blue-600/15 hover:bg-blue-600/25 border border-blue-400/35 text-[11px] font-semibold text-blue-300 flex items-center gap-1 transition"
+                      >
+                        <ArrowRightLeft className="w-3 h-3" />
+                        Открыть в таблице
+                      </button>
+                    )}
+                  </div>
+
+                  {parsedTextPreview.exercises.length > 0 && (
+                    <div className="divide-y divide-white/5 rounded-xl bg-[#0b0f19] border border-white/10">
+                      {parsedTextPreview.exercises.map((ex, i) => {
+                        const prog = programMap.get(ex.name.toLowerCase());
+                        const dp = checkDoubleProgression(ex.sets, prog);
+                        return (
+                          <div
+                            key={`${ex.name}-${i}`}
+                            className="px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-slate-200 font-medium">{ex.name}</span>
+                              {ex.matchedFrom && (
+                                <span className="text-[10px] text-slate-500">
+                                  (из «{ex.matchedFrom}»)
+                                </span>
+                              )}
+                              {dp.shouldIncrease && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-bold">
+                                  + Вес
+                                </span>
+                              )}
+                            </div>
+                            <span className="font-mono text-slate-200 tabular-nums">
+                              {formatSetsCompact(ex.sets)}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
-                  {prog && (
-                    <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-[#0b0e14] border border-slate-800 text-slate-400 tabular-nums shrink-0">
-                      {prog.targetSets}×{prog.targetRepMin}-{prog.targetRepMax}
-                    </span>
-                  )}
-
-                  {showBadge && (
-                    <button
-                      type="button"
-                      onClick={() => bumpRowWeight(exIdx)}
-                      title={badgeTitle}
-                      className="text-[11px] px-1.5 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/45 text-emerald-300 font-bold inline-flex items-center gap-1 transition shrink-0"
-                    >
-                      <TrendingUp className="w-3 h-3" />
-                      <span>+ Вес</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Middle: Compact [Weight] × [Reps] cells + Add Set */}
-                <div className="flex-1 flex flex-wrap items-center gap-1.5 pl-7 lg:pl-0">
-                  {ex.sets.map((s, sIdx) => {
-                    const prevSet = prev?.[sIdx] ?? prev?.[prev.length - 1];
-                    const repsPlaceholder = prevSet
-                      ? String(prevSet.reps)
-                      : prog
-                      ? `${prog.targetRepMin}-${prog.targetRepMax}`
-                      : 'повт';
-                    const hasReps = (parseInt(s.reps.trim(), 10) || 0) > 0;
-
-                    return (
-                      <div key={sIdx} className="flex items-center group">
-                        <div
-                          className={`flex items-center rounded-lg border transition-colors ${
-                            hasReps
-                              ? 'bg-[#0b0e14] border-blue-500/45'
-                              : 'bg-[#0b0e14] border-slate-700/75'
-                          } focus-within:border-blue-500`}
-                        >
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={s.weight}
-                            onChange={(e) => updateSet(exIdx, sIdx, 'weight', e.target.value)}
-                            placeholder={prevSet ? String(prevSet.weight) : 'кг'}
-                            aria-label={`${ex.name || 'Упражнение'}, подход ${sIdx + 1}, вес`}
-                            className="w-[48px] h-8 px-1 bg-transparent text-center text-xs font-semibold text-white outline-none tabular-nums placeholder:text-slate-600"
-                          />
-                          <span className="text-[10px] text-slate-500 select-none">×</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={s.reps}
-                            onChange={(e) => updateSet(exIdx, sIdx, 'reps', e.target.value)}
-                            placeholder={repsPlaceholder}
-                            aria-label={`${ex.name || 'Упражнение'}, подход ${sIdx + 1}, повторения`}
-                            className="w-[42px] h-8 px-1 bg-transparent text-center text-xs font-semibold text-white outline-none tabular-nums placeholder:text-slate-600"
-                          />
-                        </div>
-                        {ex.sets.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeSet(exIdx, sIdx)}
-                            className="ml-0.5 w-4 h-6 rounded text-slate-600 hover:text-rose-400 opacity-50 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity flex items-center justify-center"
-                            aria-label="Удалить подход"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
+                  {parsedTextPreview.unparsedLines.length > 0 && (
+                    <div className="rounded-xl bg-amber-500/10 border border-amber-400/30 p-3 space-y-1">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-300">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>Не распознаны строки ({parsedTextPreview.unparsedLines.length}):</span>
                       </div>
-                    );
-                  })}
+                      <ul className="text-[11px] text-amber-200/80 font-mono space-y-0.5 pl-5 list-disc">
+                        {parsedTextPreview.unparsedLines.map((line, idx) => (
+                          <li key={idx}>{line}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ─── Card-per-exercise list ─── */
+            <div className="flex flex-col gap-3">
+              {draft.exercises.length === 0 ? (
+                <div className="rounded-2xl bg-[#111827] border border-dashed border-white/15 p-8 text-center space-y-3">
+                  <Dumbbell className="w-7 h-7 text-slate-500 mx-auto" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-slate-200">
+                      Список упражнений пока пуст
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      Добавьте упражнения вручную, создайте программу в разделе «Программа / JSON» или загрузите базовую.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                draft.exercises.map((ex, exIdx) => {
+                  const prog = programMap.get(ex.name.trim().toLowerCase());
+                  const prev = previousMap.get(ex.name.trim().toLowerCase());
+                  const isProgramExercise = Boolean(prog);
 
-                  <button
-                    type="button"
-                    onClick={() => addSet(exIdx)}
-                    title="Добавить дополнительный подход"
-                    aria-label="Добавить подход"
-                    className="w-8 h-8 rounded-lg bg-[#0b0e14] border border-dashed border-slate-700/90 text-slate-400 hover:text-blue-400 hover:border-blue-500/50 flex items-center justify-center transition"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
+                  const currentSets = parseDraftSets(ex.sets);
+                  const dp = checkDoubleProgression(currentSets, prog);
+                  const dpPrev = prev ? checkDoubleProgression(prev, prog) : null;
+
+                  const prevMaxW = prev ? Math.max(...prev.map((s) => s.weight)) : 0;
+                  const currMaxW = currentSets.length > 0 ? Math.max(...currentSets.map((s) => s.weight)) : 0;
+                  const alreadyRaisedWeight =
+                    prev !== undefined && currentSets.length > 0 && currMaxW > prevMaxW;
+
+                  const showBadge =
+                    dp.shouldIncrease || Boolean(dpPrev?.shouldIncrease && !alreadyRaisedWeight);
+                  const badgeTitle = dp.shouldIncrease
+                    ? `${dp.reason}. Нажми, чтобы прибавить +${weightStep} кг`
+                    : `Прошлая тренировка: ${dpPrev?.reason ?? ''}. Нажми, чтобы прибавить +${weightStep} кг`;
+
+                  const hasAnyFilled = currentSets.length > 0;
+
+                  return (
+                    <div
+                      key={`${exIdx}-${isProgramExercise ? ex.name : 'custom'}`}
+                      className={`rounded-2xl border p-4 transition-all duration-200 ${
+                        showBadge
+                          ? 'bg-gradient-to-br from-emerald-500/[0.08] via-[#111827] to-[#111827] border-emerald-400/35 hover:border-emerald-400/55 shadow-lg shadow-emerald-950/20'
+                          : hasAnyFilled
+                          ? 'bg-[#111827] border-blue-400/30 hover:border-blue-400/45 shadow-md shadow-black/20'
+                          : 'bg-[#111827] border-white/10 hover:border-white/20 hover:bg-[#141c2e]'
+                      }`}
+                    >
+                      {/* Top row: Exercise title + colored pill below + Previous badge on right */}
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start gap-2">
+                            <span className="mt-1 text-[11px] font-mono font-semibold text-slate-500 select-none shrink-0">
+                              {String(exIdx + 1).padStart(2, '0')}
+                            </span>
+
+                            {isProgramExercise ? (
+                              <h3 className="text-base font-semibold text-white leading-snug tracking-tight">
+                                {ex.name}
+                              </h3>
+                            ) : (
+                              <div className="flex items-center gap-1.5 flex-1">
+                                <input
+                                  type="text"
+                                  value={ex.name}
+                                  onChange={(e) => updateExerciseName(exIdx, e.target.value)}
+                                  placeholder="Название упражнения..."
+                                  className="flex-1 h-9 px-3 rounded-xl bg-[#0b0f19] border border-white/10 text-sm font-semibold text-white placeholder:text-slate-600 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 transition"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeCustomExercise(exIdx)}
+                                  title="Удалить упражнение из записи"
+                                  className="w-8 h-8 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 flex items-center justify-center transition"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Colored pills cleanly below the name */}
+                          {(prog || showBadge) && (
+                            <div className="mt-2 pl-6 flex flex-wrap items-center gap-1.5">
+                              {prog && (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-blue-500/12 border border-blue-400/25 text-[11px] font-semibold text-blue-300 tabular-nums">
+                                  {prog.targetSets} × {prog.targetRepMin}-{prog.targetRepMax} повт.
+                                </span>
+                              )}
+                              {showBadge && (
+                                <button
+                                  type="button"
+                                  onClick={() => bumpRowWeight(exIdx)}
+                                  title={badgeTitle}
+                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-[11px] font-bold text-emerald-300 shadow-sm shadow-emerald-500/10 active:scale-95 transition"
+                                >
+                                  <TrendingUp className="w-3 h-3" />
+                                  <span>+ Вес (+{weightStep} кг)</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right: Previous workout badge */}
+                        <div className="pl-6 sm:pl-0 shrink-0">
+                          {prev ? (
+                            <button
+                              type="button"
+                              onClick={() => applyPreviousToRow(exIdx, prev)}
+                              title="Нажми, чтобы подставить прошлый результат в эту карточку"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#0b0f19] hover:bg-[#0e1525] border border-white/10 hover:border-white/25 text-[11px] transition group"
+                            >
+                              <History className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-400 transition shrink-0" />
+                              <span className="text-slate-400">Прошлая:</span>
+                              <span className="font-mono font-semibold text-slate-200 tabular-nums">
+                                {formatSetsCompact(prev)}
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#0b0f19]/60 border border-white/5 text-[11px] text-slate-500">
+                              <History className="w-3 h-3 text-slate-600 shrink-0" />
+                              <span>Нет прошлых</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bottom row: Set cells [Weight] × [Reps] + Add Set */}
+                      <div className="mt-3.5 pl-0 sm:pl-6 flex flex-wrap items-center gap-2">
+                        {ex.sets.map((s, sIdx) => {
+                          const prevSet = prev?.[sIdx] ?? prev?.[prev.length - 1];
+                          const repsPlaceholder = prevSet
+                            ? String(prevSet.reps)
+                            : prog
+                            ? `${prog.targetRepMin}-${prog.targetRepMax}`
+                            : 'повт';
+                          const hasReps = (parseInt(s.reps.trim(), 10) || 0) > 0;
+
+                          const cellClasses = hasReps
+                            ? showBadge
+                              ? 'bg-emerald-500/[0.12] border-emerald-400/50 focus-within:ring-2 focus-within:ring-emerald-400/45 focus-within:border-emerald-400'
+                              : 'bg-blue-500/[0.12] border-blue-400/50 focus-within:ring-2 focus-within:ring-blue-400/45 focus-within:border-blue-400'
+                            : showBadge
+                            ? 'bg-[#0b0f19] border-white/10 hover:border-emerald-400/35 focus-within:ring-2 focus-within:ring-emerald-400/40 focus-within:border-emerald-400'
+                            : 'bg-[#0b0f19] border-white/10 hover:border-white/20 focus-within:ring-2 focus-within:ring-blue-500/40 focus-within:border-blue-400';
+
+                          return (
+                            <div key={sIdx} className="flex items-center group animate-set-pop">
+                              <div
+                                className={`flex items-center h-10 rounded-xl border transition-all duration-150 ${cellClasses}`}
+                              >
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={s.weight}
+                                  onChange={(e) => updateSet(exIdx, sIdx, 'weight', e.target.value)}
+                                  placeholder={prevSet ? String(prevSet.weight) : 'кг'}
+                                  aria-label={`${ex.name || 'Упражнение'}, подход ${sIdx + 1}, вес`}
+                                  className="w-[56px] h-full px-1.5 bg-transparent text-center text-sm font-bold text-white outline-none tabular-nums placeholder:text-slate-600"
+                                />
+                                <span className="text-xs font-semibold text-slate-500 select-none">
+                                  ×
+                                </span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={s.reps}
+                                  onChange={(e) => updateSet(exIdx, sIdx, 'reps', e.target.value)}
+                                  placeholder={repsPlaceholder}
+                                  aria-label={`${ex.name || 'Упражнение'}, подход ${sIdx + 1}, повторения`}
+                                  className="w-[50px] h-full px-1.5 bg-transparent text-center text-sm font-bold text-white outline-none tabular-nums placeholder:text-slate-600"
+                                />
+                              </div>
+
+                              {ex.sets.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeSet(exIdx, sIdx)}
+                                  className="ml-0.5 w-5 h-7 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition flex items-center justify-center"
+                                  aria-label="Удалить подход"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          onClick={() => addSet(exIdx)}
+                          title="Добавить дополнительный подход"
+                          aria-label="Добавить подход"
+                          className="h-10 w-10 rounded-xl bg-[#0b0f19] border border-dashed border-white/15 text-slate-400 hover:text-blue-300 hover:border-blue-400/60 hover:bg-blue-500/10 active:scale-95 flex items-center justify-center transition"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+
+              {/* Add ad-hoc exercise */}
+              <button
+                type="button"
+                onClick={addCustomExercise}
+                className="w-full h-11 rounded-2xl bg-[#111827] hover:bg-[#151e30] border border-dashed border-white/15 hover:border-blue-400/40 text-xs font-semibold text-slate-300 hover:text-blue-300 inline-flex items-center justify-center gap-2 transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Добавить дополнительное упражнение</span>
+              </button>
+            </div>
+          )}
+
+          {/* Mobile Save Button */}
+          <button
+            type="button"
+            onClick={handleSave}
+            className={`lg:hidden w-full h-12 rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 active:scale-[0.98] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 transition ${
+              isSavingAnim ? 'scale-[0.98] ring-4 ring-emerald-400/30' : ''
+            }`}
+          >
+            <Save className="w-4 h-4" />
+            <span>
+              Сохранить запись
+              {liveSummary.filledExercises > 0 ? ` (${liveSummary.filledExercises} упр.)` : ''}
+            </span>
+          </button>
+        </div>
+
+        {/* ─── Right Sidebar (30%): Live Summary & Last Workout ─── */}
+        <aside className="lg:sticky lg:top-20 space-y-4">
+          {/* Live Current Workout Summary */}
+          <div className="rounded-2xl bg-[#111827] border border-white/10 p-4 sm:p-5 space-y-4 shadow-xl shadow-black/25">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-blue-500/15 border border-blue-400/25 flex items-center justify-center">
+                  <Activity className="w-4 h-4 text-blue-400" />
+                </div>
+                <h3 className="text-sm font-bold text-white">Сводка текущей тренировки</h3>
+              </div>
+              <span className="text-[11px] font-semibold text-slate-400 tabular-nums">
+                {liveSummary.filledExercises}/{liveSummary.totalTarget}
+              </span>
+            </div>
+
+            {/* Progress bar */}
+            <div className="space-y-1.5">
+              <div className="h-2 w-full rounded-full bg-[#0b0f19] border border-white/5 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-300"
+                  style={{ width: `${liveSummary.progressPct}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Выполнено упражнений: <span className="text-slate-200 font-semibold">{liveSummary.progressPct}%</span>
+              </p>
+            </div>
+
+            {/* Real-time stats */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-xl bg-[#0b0f19] border border-white/10 p-3 space-y-1">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Подходы</span>
+                  <Layers className="w-3.5 h-3.5 text-blue-400" />
+                </div>
+                <p className="text-xl font-bold text-white tabular-nums">
+                  {liveSummary.completedSets}
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-[#0b0f19] border border-white/10 p-3 space-y-1">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Тоннаж</span>
+                  <Flame className="w-3.5 h-3.5 text-amber-400" />
+                </div>
+                <p className="text-xl font-bold text-white tabular-nums">
+                  {formatNum(liveSummary.totalTonnage)}{' '}
+                  <span className="text-xs font-medium text-slate-400">кг</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Progression hint */}
+            <div className="rounded-xl bg-[#0b0f19] border border-white/10 p-3 space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Подсказка по прогрессии</span>
+              </div>
+
+              {liveSummary.progressionHints.length > 0 ? (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] text-emerald-300/90">
+                    Пора поднять вес ({liveSummary.progressionHints.length} упр.):
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {liveSummary.progressionHints.slice(0, 4).map((hint) => (
+                      <span
+                        key={hint.name}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/35 text-emerald-300 font-medium truncate max-w-full"
+                      >
+                        + {hint.name}
+                      </span>
+                    ))}
+                    {liveSummary.progressionHints.length > 4 && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400">
+                        +{liveSummary.progressionHints.length - 4}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  {liveSummary.completedSets > 0
+                    ? 'Продолжайте добирать повторения до верхней границы диапазона.'
+                    : 'Введите повторения — здесь появятся тоннаж и сигналы на повышение веса.'}
+                </p>
+              )}
+            </div>
+
+            {/* Desktop Save Button */}
+            <button
+              type="button"
+              onClick={handleSave}
+              className={`hidden lg:flex w-full h-11 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 active:scale-[0.98] text-white font-semibold text-sm items-center justify-center gap-2 shadow-lg shadow-blue-600/25 transition-all ${
+                isSavingAnim ? 'scale-[0.97] ring-4 ring-emerald-400/35' : ''
+              }`}
+            >
+              <Save className="w-4 h-4" />
+              <span>
+                Сохранить запись
+                {liveSummary.filledExercises > 0 ? ` (${liveSummary.filledExercises})` : ''}
+              </span>
+            </button>
+          </div>
+
+          {/* Last Workout Reference Mini-Card */}
+          <div className="rounded-2xl bg-[#111827] border border-white/10 p-4 sm:p-5 space-y-3 shadow-lg shadow-black/20">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
+                  <History className="w-3.5 h-3.5 text-slate-300" />
+                </div>
+                <h3 className="text-sm font-bold text-white">Последняя тренировка</h3>
+              </div>
+              {lastWorkout && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0b0f19] border border-white/10 text-slate-300 tabular-nums">
+                  {formatNum(Math.round(entryTonnage(lastWorkout)))} кг
+                </span>
+              )}
+            </div>
+
+            {lastWorkout ? (
+              <div className="space-y-2.5">
+                <div className="text-xs text-slate-400 capitalize flex items-center justify-between">
+                  <span>{formatFullDate(lastWorkout.date)}</span>
+                  <span className="text-[11px] text-slate-500">
+                    {lastWorkout.exercises.length} упр.
+                  </span>
                 </div>
 
-                {/* Right: Previous workout record */}
-                <div className="lg:w-[215px] lg:text-right shrink-0 pl-7 lg:pl-0">
-                  {prev ? (
-                    <button
-                      type="button"
-                      onClick={() => applyPreviousToRow(exIdx, prev)}
-                      title="Нажми, чтобы подставить прошлый результат в эту строку"
-                      className="text-[11px] text-slate-500 hover:text-slate-300 transition text-left lg:text-right leading-snug"
+                {lastWorkout.notes && (
+                  <p className="text-[11px] text-slate-400 italic bg-[#0b0f19] border border-white/5 rounded-lg px-2.5 py-1.5">
+                    📝 {lastWorkout.notes}
+                  </p>
+                )}
+
+                <div className="space-y-1.5 rounded-xl bg-[#0b0f19] border border-white/10 p-3">
+                  {lastWorkout.exercises.slice(0, 6).map((ex, i) => (
+                    <div
+                      key={`${ex.name}-${i}`}
+                      className="flex items-baseline justify-between gap-2 text-[11px] leading-snug"
                     >
-                      Прошлая:{' '}
-                      <span className="text-slate-400 font-medium tabular-nums">
-                        {formatSetsCompact(prev)}
+                      <span className="text-slate-300 truncate">{ex.name}</span>
+                      <span className="font-mono text-slate-400 shrink-0 tabular-nums">
+                        {formatSetsCompact(ex.sets)}
                       </span>
-                    </button>
-                  ) : (
-                    <span className="text-[11px] text-slate-600">Прошлая: —</span>
+                    </div>
+                  ))}
+                  {lastWorkout.exercises.length > 6 && (
+                    <p className="text-[10px] text-slate-500 pt-0.5">
+                      + ещё {lastWorkout.exercises.length - 6} упр. в журнале
+                    </p>
                   )}
                 </div>
               </div>
-            );
-          })}
-
-          {/* Add ad-hoc exercise */}
-          <div className="px-3 sm:px-4 py-2 bg-[#111520]">
-            <button
-              type="button"
-              onClick={addCustomExercise}
-              className="text-xs font-semibold text-slate-400 hover:text-blue-400 inline-flex items-center gap-1.5 py-1 transition"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Добавить дополнительное упражнение</span>
-            </button>
+            ) : (
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Сохранённых тренировок пока нет. После первой записи здесь появится быстрый ориентир.
+              </p>
+            )}
           </div>
-        </div>
-      )}
-
-      {/* Save button */}
-      <button
-        type="button"
-        onClick={handleSave}
-        className="w-full h-12 rounded-2xl bg-blue-600 hover:bg-blue-500 active:scale-[0.99] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition"
-      >
-        <Save className="w-4 h-4" />
-        <span>
-          Сохранить запись{activeExercisesCount > 0 ? ` (${activeExercisesCount} упр.)` : ''}
-        </span>
-      </button>
+        </aside>
+      </div>
     </div>
   );
 }

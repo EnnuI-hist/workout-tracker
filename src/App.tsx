@@ -303,10 +303,10 @@ export function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0b0d12] text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-[#0b0d12]/90 backdrop-blur-md border-b border-slate-800/80">
-        <div className="max-w-6xl mx-auto px-4 h-14 sm:h-16 flex items-center justify-between gap-3">
+      <header className="sticky top-0 z-30 bg-[#090d16]/85 backdrop-blur-xl border-b border-white/10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
           {/* Brand */}
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
@@ -323,7 +323,7 @@ export function App() {
           </div>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-1 bg-[#141822] border border-slate-800/90 p-1 rounded-xl">
+          <nav className="hidden md:flex items-center gap-1 bg-[#111827] border border-white/10 p-1 rounded-xl">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -334,8 +334,8 @@ export function App() {
                   onClick={() => setActiveTab(item.id)}
                   className={`relative px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                      ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -343,7 +343,7 @@ export function App() {
                   {item.badge !== undefined && (
                     <span
                       className={`text-[10px] px-1.5 py-0.2 rounded-full tabular-nums ${
-                        isActive ? 'bg-blue-500/60 text-white' : 'bg-slate-800 text-slate-300'
+                        isActive ? 'bg-blue-500/60 text-white' : 'bg-[#0b0f19] text-slate-300 border border-white/10'
                       }`}
                     >
                       {item.badge}
@@ -359,7 +359,7 @@ export function App() {
             <button
               type="button"
               onClick={() => setIsDataModalOpen(true)}
-              className="h-9 px-3 rounded-xl bg-[#141822] hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition"
+              className="h-9 px-3 rounded-xl bg-[#111827] hover:bg-[#172033] border border-white/10 hover:border-white/20 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition"
             >
               <Database className="w-3.5 h-3.5 text-blue-400" />
               <span className="hidden sm:inline">Программа / JSON</span>
@@ -370,7 +370,7 @@ export function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 pt-4 sm:pt-6 pb-24 md:pb-10">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 pt-5 sm:pt-6 pb-24 md:pb-12">
         {activeTab === 'entry' && (
           <WorkoutEntryForm
             program={db.program}
@@ -400,7 +400,7 @@ export function App() {
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-[#0e121b]/95 backdrop-blur-md border-t border-slate-800/90 px-2 py-1.5">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-[#090d16]/95 backdrop-blur-xl border-t border-white/10 px-2 py-1.5">
         <div className="grid grid-cols-3 gap-1 max-w-md mx-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -412,7 +412,7 @@ export function App() {
                 onClick={() => setActiveTab(item.id)}
                 className={`relative flex flex-col items-center justify-center py-1.5 rounded-xl transition ${
                   isActive
-                    ? 'text-blue-400 bg-blue-500/10'
+                    ? 'text-blue-400 bg-blue-500/12'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -433,7 +433,7 @@ export function App() {
 
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-20 md:bottom-6 right-4 left-4 sm:left-auto sm:max-w-sm z-50 rounded-2xl bg-[#161c2a] border border-emerald-500/40 shadow-2xl px-4 py-3 flex items-center gap-2.5 text-xs sm:text-sm text-emerald-100">
+        <div className="animate-toast-in fixed bottom-20 md:bottom-6 right-4 left-4 sm:left-auto sm:max-w-sm z-50 rounded-2xl bg-[#111827] border border-emerald-400/40 shadow-2xl shadow-black/50 px-4 py-3 flex items-center gap-2.5 text-xs sm:text-sm text-emerald-100">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span className="font-medium">{toast}</span>
         </div>
