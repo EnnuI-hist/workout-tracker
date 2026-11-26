@@ -1,7 +1,17 @@
 /* ─── Compact diary-style workout tracker types ─── */
 
+export type ExerciseCategory =
+  | 'Спина'
+  | 'Грудь'
+  | 'Ноги'
+  | 'Плечи'
+  | 'Руки'
+  | 'Кор'
+  | 'Другое';
+
 export interface ProgramExercise {
   name: string;
+  category?: ExerciseCategory;
   targetSets: number;
   targetRepMin: number;
   targetRepMax: number;
@@ -38,6 +48,7 @@ export interface DraftSet {
 
 export interface DraftExercise {
   name: string;
+  category?: ExerciseCategory;
   sets: DraftSet[];
 }
 

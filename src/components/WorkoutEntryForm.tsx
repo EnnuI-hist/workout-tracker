@@ -4,6 +4,7 @@ import {
   AlignLeft,
   ArrowRightLeft,
   Check,
+  ChevronDown,
   Dumbbell,
   Eraser,
   FileText,
@@ -21,6 +22,7 @@ import {
 import { useMemo, useRef, useState } from 'react';
 import type {
   DraftExercise,
+  ExerciseCategory,
   ExerciseEntry,
   ProgramExercise,
   SetEntry,
@@ -39,6 +41,7 @@ import {
   getTodayISO,
   sortEntriesNewestFirst,
 } from '../utils/calculations.ts';
+import { EXERCISE_CATEGORIES, getCategoryStyle } from '../utils/categories.ts';
 import { DEFAULT_PROGRAM } from '../utils/defaultProgram.ts';
 import { matchToProgramName, parseWorkoutTextDetailed } from '../utils/textParser.ts';
 
@@ -48,77 +51,10 @@ interface WorkoutEntryFormProps {
   weightStep: 1.25 | 2.5;
   draft: WorkoutDraftState;
   onChangeDraft: (updater: (prev: WorkoutDraftState) => WorkoutDraftState) => void;
+  onChangeExerciseCategory: (exerciseName: string, category: ExerciseCategory) => void;
   onLoadDefaultProgram: () => void;
   onSave: (entry: WorkoutEntry) => void;
   onNotify: (message: string) => void;
-}
-
-interface CategoryAccent {
-  label: string;
-  borderLeft: string;
-  dot: string;
-  pill: string;
-}
-
-function getExerciseCategoryAccent(name: string): CategoryAccent {
-  const n = name.trim().toLowerCase().replace(/ё/g, 'е');
-
-  // 1. Ноги
-  if (/(ног|присед|выпад|икр|платформ|румын|квадрицепс|бицепс бедра)/.test(n)) {
-    return {
-      label: 'Ноги',
-      borderLeft: 'border-l-violet-500',
-      dot: 'bg-violet-400',
-      pill: 'bg-violet-500/12 border-violet-400/25 text-violet-300',
-    };
-  }
-
-  // 2. Кор / Пресс
-  if (/(скручиван|пресс|планк|подъем ног)/.test(n)) {
-    return {
-      label: 'Кор',
-      borderLeft: 'border-l-cyan-400',
-      dot: 'bg-cyan-400',
-      pill: 'bg-cyan-500/12 border-cyan-400/25 text-cyan-300',
-    };
-  }
-
-  // 3. Руки / Дельты
-  if (/(бицепс|трицепс|брахиалис|дельт|протяжк|брусья|из-за головы|махи|молот|француз|предплеч)/.test(n)) {
-    return {
-      label: 'Руки / Дельты',
-      borderLeft: 'border-l-amber-500',
-      dot: 'bg-amber-400',
-      pill: 'bg-amber-500/12 border-amber-400/25 text-amber-300',
-    };
-  }
-
-  // 4. Спина / Тяги
-  if (/(тяга|хаммер|подтягив|спин|шраг|пуловер|гиперэкстенз)/.test(n)) {
-    return {
-      label: 'Спина / Тяги',
-      borderLeft: 'border-l-blue-500',
-      dot: 'bg-blue-400',
-      pill: 'bg-blue-500/12 border-blue-400/25 text-blue-300',
-    };
-  }
-
-  // 5. Грудь / Жимы
-  if (/(жим|груд|бабочк|сведение|кроссовер|отжиман|пек)/.test(n)) {
-    return {
-      label: 'Грудь / Жимы',
-      borderLeft: 'border-l-emerald-500',
-      dot: 'bg-emerald-400',
-      pill: 'bg-emerald-500/12 border-emerald-400/25 text-emerald-300',
-    };
-  }
-
-  return {
-    label: 'Общее',
-    borderLeft: 'border-l-slate-500',
-    dot: 'bg-slate-400',
-    pill: 'bg-slate-500/15 border-slate-500/30 text-slate-300',
-  };
 }
 
 function parseDraftSets(sets: Array<{ weight: string; reps: string }>): SetEntry[] {
@@ -140,6 +76,7 @@ export function WorkoutEntryForm({
   weightStep,
   draft,
   onChangeDraft,
+  onChangeExerciseCategory,
   onLoadDefaultProgram,
   onSave,
   onNotify,
@@ -324,6 +261,7 @@ export function WorkoutEntryForm({
         ...prev.exercises,
         {
           name: '',
+          category: 'Другое',
           sets: [
             { weight: '', reps: '' },
             { weight: '', reps: '' },
@@ -331,6 +269,24 @@ export function WorkoutEntryForm({
         },
       ],
     }));
+  };
+
+  const handleCategoryChange = (
+    exIdx: number,
+    exerciseName: string,
+    nextCategory: ExerciseCategory,
+    isProgramExercise: boolean
+  ) => {
+    if (isProgramExercise && exerciseName.trim()) {
+      onChangeExerciseCategory(exerciseName, nextCategory);
+    } else {
+      onChangeDraft((prev) => ({
+        ...prev,
+        exercises: prev.exercises.map((ex, i) =>
+          i === exIdx ? { ...ex, category: nextCategory } : ex
+        ),
+      }));
+    }
   };
 
   const removeCustomExercise = (exIdx: number) => {
@@ -777,7 +733,9 @@ export function WorkoutEntryForm({
                   const prog = programMap.get(ex.name.trim().toLowerCase());
                   const prev = previousMap.get(ex.name.trim().toLowerCase());
                   const isProgramExercise = Boolean(prog);
-                  const accent = getExerciseCategoryAccent(ex.name);
+                  const currentCategory: ExerciseCategory =
+                    prog?.category ?? ex.category ?? 'Другое';
+                  const accent = getCategoryStyle(currentCategory);
 
                   const currentSets = parseDraftSets(ex.sets);
                   const dp = checkDoubleProgression(currentSets, prog);
@@ -856,14 +814,39 @@ export function WorkoutEntryForm({
                           )}
                         </div>
 
-                        {/* Category & Target Range Pills */}
+                        {/* Interactive Category Pill + Target Range Pill */}
                         <div className="flex flex-wrap items-center gap-1.5 pl-5">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${accent.pill}`}
+                          <label
+                            title="Нажмите, чтобы выбрать категорию"
+                            className={`relative inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold cursor-pointer transition ${accent.pill}`}
                           >
-                            <span className={`w-1.5 h-1.5 rounded-full ${accent.dot}`} />
-                            {accent.label}
-                          </span>
+                            <span className={`w-1.5 h-1.5 rounded-full ${accent.dot} shrink-0`} />
+                            <span>{accent.label}</span>
+                            <ChevronDown className="w-2.5 h-2.5 opacity-75 shrink-0" />
+                            <select
+                              value={currentCategory}
+                              onChange={(e) =>
+                                handleCategoryChange(
+                                  exIdx,
+                                  ex.name,
+                                  e.target.value as ExerciseCategory,
+                                  isProgramExercise
+                                )
+                              }
+                              aria-label={`Категория для ${ex.name || 'упражнения'}`}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer bg-[#111827] text-slate-100"
+                            >
+                              {EXERCISE_CATEGORIES.map((cat) => (
+                                <option
+                                  key={cat}
+                                  value={cat}
+                                  className="bg-[#111827] text-slate-100"
+                                >
+                                  {cat}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                           {prog && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-900/90 border border-slate-700/80 text-[10px] font-semibold text-slate-300 tabular-nums">
                               {prog.targetSets} × {prog.targetRepMin}-{prog.targetRepMax} повт.

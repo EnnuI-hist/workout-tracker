@@ -1,4 +1,5 @@
 import type { DraftExercise, ExerciseEntry, ProgramExercise, SetEntry, WorkoutEntry } from '../types/workout.ts';
+import { normalizeCategory } from './categories.ts';
 
 /* ─── ID ─── */
 
@@ -195,7 +196,7 @@ export function createDraftExercises(
           reps: '',
         };
       });
-      return { name: p.name, sets };
+      return { name: p.name, category: normalizeCategory(p.category), sets };
     });
 }
 

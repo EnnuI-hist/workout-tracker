@@ -12,7 +12,8 @@ import {
   X,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
-import type { AppDatabase, ProgramExercise } from '../types/workout.ts';
+import type { AppDatabase, ExerciseCategory, ProgramExercise } from '../types/workout.ts';
+import { EXERCISE_CATEGORIES, getCategoryStyle, normalizeCategory } from '../utils/categories.ts';
 import { exportJson, parseImportedJson } from '../utils/storage.ts';
 
 interface DataModalProps {
@@ -77,6 +78,40 @@ function NumericField({
   );
 }
 
+function CategorySelect({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: ExerciseCategory;
+  onChange: (next: ExerciseCategory) => void;
+  ariaLabel: string;
+}) {
+  const style = getCategoryStyle(value);
+  return (
+    <label
+      title="Выбрать категорию"
+      className={`relative inline-flex items-center gap-1 h-8 px-2 rounded-lg border text-[11px] font-semibold cursor-pointer shrink-0 transition ${style.pill}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${style.dot} shrink-0`} />
+      <span>{style.label}</span>
+      <ChevronDown className="w-3 h-3 opacity-75 shrink-0" />
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as ExerciseCategory)}
+        aria-label={ariaLabel}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer bg-[#111827] text-slate-100"
+      >
+        {EXERCISE_CATEGORIES.map((cat) => (
+          <option key={cat} value={cat} className="bg-[#111827] text-slate-100">
+            {cat}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function DataModal({
   isOpen,
   onClose,
@@ -99,6 +134,8 @@ export function DataModal({
   const [confirmClear, setConfirmClear] = useState(false);
   const [showProgramEditor, setShowProgramEditor] = useState(true);
   const [newProgramName, setNewProgramName] = useState('');
+  const [newExerciseName, setNewExerciseName] = useState('');
+  const [newExerciseCategory, setNewExerciseCategory] = useState<ExerciseCategory>('Спина');
 
   if (!isOpen) return null;
 
@@ -151,8 +188,15 @@ export function DataModal({
   const addProgramItem = () => {
     onUpdateProgram([
       ...exercises,
-      { name: '', targetSets: 3, targetRepMin: 8, targetRepMax: 12 },
+      {
+        name: newExerciseName.trim(),
+        category: newExerciseCategory,
+        targetSets: 3,
+        targetRepMin: 8,
+        targetRepMax: 12,
+      },
     ]);
+    setNewExerciseName('');
   };
 
   const clearProgramExercises = () => {
@@ -334,7 +378,12 @@ export function DataModal({
                         value={p.name}
                         placeholder="Название упражнения..."
                         onChange={(e) => updateProgramItem(idx, { name: e.target.value })}
-                        className="flex-1 min-w-[140px] h-8 px-2 rounded-lg bg-[#111827] border border-slate-800 text-xs text-white placeholder:text-slate-600 outline-none focus:border-blue-500"
+                        className="flex-1 min-w-[120px] h-8 px-2 rounded-lg bg-[#111827] border border-slate-800 text-xs text-white placeholder:text-slate-600 outline-none focus:border-blue-500"
+                      />
+                      <CategorySelect
+                        value={normalizeCategory(p.category)}
+                        onChange={(cat) => updateProgramItem(idx, { category: cat })}
+                        ariaLabel={`Категория упражнения ${p.name || idx + 1}`}
                       />
                       <div className="flex items-center gap-1 shrink-0 text-[11px] text-slate-400">
                         <NumericField
@@ -374,25 +423,48 @@ export function DataModal({
                   ))
                 )}
 
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={addProgramItem}
-                    className="flex-1 h-9 px-3 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/30 text-blue-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Добавить упражнение
-                  </button>
-                  {exercises.length > 0 && (
+                <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={newExerciseName}
+                      onChange={(e) => setNewExerciseName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addProgramItem();
+                        }
+                      }}
+                      placeholder="Новое упражнение (необязательно)..."
+                      className="flex-1 min-w-[140px] h-9 px-2.5 rounded-lg bg-[#111827] border border-slate-800 text-xs text-white placeholder:text-slate-600 outline-none focus:border-blue-500"
+                    />
+                    <CategorySelect
+                      value={newExerciseCategory}
+                      onChange={setNewExerciseCategory}
+                      ariaLabel="Категория нового упражнения"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={clearProgramExercises}
-                      className="h-9 px-3 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-rose-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                      onClick={addProgramItem}
+                      className="flex-1 h-9 px-3 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/30 text-blue-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Очистить список
+                      <Plus className="w-3.5 h-3.5" />
+                      Добавить упражнение
                     </button>
-                  )}
+                    {exercises.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearProgramExercises}
+                        className="h-9 px-3 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-rose-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Очистить список
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

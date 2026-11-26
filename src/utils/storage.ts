@@ -7,6 +7,7 @@ import type {
   WorkoutProgram,
 } from '../types/workout.ts';
 import { generateId } from './calculations.ts';
+import { normalizeCategory } from './categories.ts';
 
 const DB_KEY = 'ironpulse_gym_db_v2';
 const DRAFT_KEY = 'ironpulse_entry_draft_v2';
@@ -115,6 +116,7 @@ function normalizeExercises(rawProgram: unknown): ProgramExercise[] {
     )
     .map((p) => ({
       name: p.name.trim(),
+      category: normalizeCategory(p.category),
       targetSets: Math.max(1, Math.round(Number(p.targetSets) || 2)),
       targetRepMin: Math.max(1, Math.round(Number(p.targetRepMin) || 6)),
       targetRepMax: Math.max(1, Math.round(Number(p.targetRepMax) || 12)),

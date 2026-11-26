@@ -13,6 +13,7 @@ import { JournalView } from './components/JournalView.tsx';
 import { WorkoutEntryForm } from './components/WorkoutEntryForm.tsx';
 import type {
   AppDatabase,
+  ExerciseCategory,
   NavTab,
   ProgramExercise,
   WorkoutDraftState,
@@ -49,7 +50,10 @@ function syncDraftExercises(
       .map((ex) => [ex.name.trim().toLowerCase(), ex])
   );
   const fresh = createDraftExercises(nextProgram, entries);
-  const merged = fresh.map((row) => existingByName.get(row.name.trim().toLowerCase()) ?? row);
+  const merged = fresh.map((row) => {
+    const existing = existingByName.get(row.name.trim().toLowerCase());
+    return existing ? { ...existing, category: row.category } : row;
+  });
   return {
     ...prevDraft,
     exercises: merged,
@@ -237,6 +241,39 @@ export function App() {
     [db.activeProgramId, db.entries, db.programs]
   );
 
+  const handleChangeExerciseCategory = useCallback(
+    (exerciseName: string, category: ExerciseCategory) => {
+      const targetKey = exerciseName.trim().toLowerCase();
+      if (!targetKey) return;
+      const currentActiveId = db.activeProgramId ?? db.programs[0]?.id ?? null;
+
+      setDb((prev) => ({
+        ...prev,
+        programs: prev.programs.map((p) =>
+          p.id === currentActiveId
+            ? {
+                ...p,
+                exercises: p.exercises.map((ex) =>
+                  ex.name.trim().toLowerCase() === targetKey ? { ...ex, category } : ex
+                ),
+              }
+            : p
+        ),
+        program: prev.program.map((ex) =>
+          ex.name.trim().toLowerCase() === targetKey ? { ...ex, category } : ex
+        ),
+      }));
+
+      setDraft((prevDraft) => ({
+        ...prevDraft,
+        exercises: prevDraft.exercises.map((ex) =>
+          ex.name.trim().toLowerCase() === targetKey ? { ...ex, category } : ex
+        ),
+      }));
+    },
+    [db.activeProgramId, db.programs]
+  );
+
   const handleResetProgram = useCallback(() => {
     const defaultExercises = DEFAULT_PROGRAM.map((p) => ({ ...p }));
     const defaultName = 'Full-Body (13 упр.)';
@@ -378,6 +415,7 @@ export function App() {
             weightStep={db.settings.weightStep}
             draft={draft}
             onChangeDraft={setDraft}
+            onChangeExerciseCategory={handleChangeExerciseCategory}
             onLoadDefaultProgram={handleResetProgram}
             onSave={handleSaveEntry}
             onNotify={showToast}
