@@ -18,7 +18,7 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type {
   DraftExercise,
   ExerciseEntry,
@@ -53,6 +53,74 @@ interface WorkoutEntryFormProps {
   onNotify: (message: string) => void;
 }
 
+interface CategoryAccent {
+  label: string;
+  borderLeft: string;
+  dot: string;
+  pill: string;
+}
+
+function getExerciseCategoryAccent(name: string): CategoryAccent {
+  const n = name.trim().toLowerCase().replace(/ё/g, 'е');
+
+  // 1. Ноги
+  if (/(ног|присед|выпад|икр|платформ|румын|квадрицепс|бицепс бедра)/.test(n)) {
+    return {
+      label: 'Ноги',
+      borderLeft: 'border-l-violet-500',
+      dot: 'bg-violet-400',
+      pill: 'bg-violet-500/12 border-violet-400/25 text-violet-300',
+    };
+  }
+
+  // 2. Кор / Пресс
+  if (/(скручиван|пресс|планк|подъем ног)/.test(n)) {
+    return {
+      label: 'Кор',
+      borderLeft: 'border-l-cyan-400',
+      dot: 'bg-cyan-400',
+      pill: 'bg-cyan-500/12 border-cyan-400/25 text-cyan-300',
+    };
+  }
+
+  // 3. Руки / Дельты
+  if (/(бицепс|трицепс|брахиалис|дельт|протяжк|брусья|из-за головы|махи|молот|француз|предплеч)/.test(n)) {
+    return {
+      label: 'Руки / Дельты',
+      borderLeft: 'border-l-amber-500',
+      dot: 'bg-amber-400',
+      pill: 'bg-amber-500/12 border-amber-400/25 text-amber-300',
+    };
+  }
+
+  // 4. Спина / Тяги
+  if (/(тяга|хаммер|подтягив|спин|шраг|пуловер|гиперэкстенз)/.test(n)) {
+    return {
+      label: 'Спина / Тяги',
+      borderLeft: 'border-l-blue-500',
+      dot: 'bg-blue-400',
+      pill: 'bg-blue-500/12 border-blue-400/25 text-blue-300',
+    };
+  }
+
+  // 5. Грудь / Жимы
+  if (/(жим|груд|бабочк|сведение|кроссовер|отжиман|пек)/.test(n)) {
+    return {
+      label: 'Грудь / Жимы',
+      borderLeft: 'border-l-emerald-500',
+      dot: 'bg-emerald-400',
+      pill: 'bg-emerald-500/12 border-emerald-400/25 text-emerald-300',
+    };
+  }
+
+  return {
+    label: 'Общее',
+    borderLeft: 'border-l-slate-500',
+    dot: 'bg-slate-400',
+    pill: 'bg-slate-500/15 border-slate-500/30 text-slate-300',
+  };
+}
+
 function parseDraftSets(sets: Array<{ weight: string; reps: string }>): SetEntry[] {
   const result: SetEntry[] = [];
   for (const s of sets) {
@@ -77,6 +145,8 @@ export function WorkoutEntryForm({
   onNotify,
 }: WorkoutEntryFormProps) {
   const [isSavingAnim, setIsSavingAnim] = useState(false);
+  const [autofilledExIdx, setAutofilledExIdx] = useState<number | null>(null);
+  const autofillTimerRef = useRef<number | null>(null);
 
   const programMap = useMemo(() => {
     const map = new Map<string, ProgramExercise>();
@@ -285,6 +355,11 @@ export function WorkoutEntryForm({
           : ex
       ),
     }));
+    if (autofillTimerRef.current !== null) {
+      window.clearTimeout(autofillTimerRef.current);
+    }
+    setAutofilledExIdx(exIdx);
+    autofillTimerRef.current = window.setTimeout(() => setAutofilledExIdx(null), 1100);
   };
 
   const bumpRowWeight = (exIdx: number) => {
@@ -456,9 +531,9 @@ export function WorkoutEntryForm({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Top Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
             Новая запись тренировки
@@ -509,9 +584,9 @@ export function WorkoutEntryForm({
       </div>
 
       {/* 2-Column Desktop Layout (70% / 30%) */}
-      <div className="grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[7fr_3fr] gap-4 items-start">
         {/* ─── Left Column: Workout Cards / Quick Text ─── */}
-        <div className="space-y-3.5 min-w-0">
+        <div className="space-y-3 min-w-0">
           {/* Notes + Quick tools */}
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -519,7 +594,7 @@ export function WorkoutEntryForm({
               value={draft.notes}
               onChange={(e) => onChangeDraft((prev) => ({ ...prev, notes: e.target.value }))}
               placeholder="Заметка к тренировке (самочувствие, нюансы — необязательно)..."
-              className="flex-1 h-10 px-3.5 rounded-xl bg-[#111827] border border-white/10 text-xs sm:text-sm text-white placeholder:text-slate-500 outline-none focus:bg-[#0b0f19] focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/30 transition"
+              className="flex-1 h-9 px-3.5 rounded-xl bg-[#111827] border border-white/10 text-xs text-white placeholder:text-slate-500 outline-none focus:bg-[#0b0f19] focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/30 transition"
             />
 
             {!draft.textMode && (
@@ -529,7 +604,7 @@ export function WorkoutEntryForm({
                     type="button"
                     onClick={handleFillAllFromPrevious}
                     title="Заполнить пустые упражнения результатами прошлой тренировки"
-                    className="h-10 px-3 rounded-xl bg-[#111827] hover:bg-[#172033] border border-white/10 hover:border-white/20 text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition"
+                    className="h-9 px-2.5 rounded-xl bg-[#111827] hover:bg-[#172033] border border-white/10 hover:border-white/20 text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition"
                   >
                     <History className="w-3.5 h-3.5 text-blue-400" />
                     <span className="hidden sm:inline">Как в прошлый раз</span>
@@ -540,7 +615,7 @@ export function WorkoutEntryForm({
                   type="button"
                   onClick={handleClearTable}
                   title="Очистить введённые повторения"
-                  className="h-10 px-3 rounded-xl bg-[#111827] hover:bg-[#172033] border border-white/10 hover:border-white/20 text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center gap-1.5 transition"
+                  className="h-9 px-2.5 rounded-xl bg-[#111827] hover:bg-[#172033] border border-white/10 hover:border-white/20 text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center gap-1 transition"
                 >
                   <Eraser className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Очистить</span>
@@ -549,7 +624,7 @@ export function WorkoutEntryForm({
                   <button
                     type="button"
                     onClick={onLoadDefaultProgram}
-                    className="h-10 px-3 rounded-xl bg-emerald-500/12 hover:bg-emerald-500/20 border border-emerald-400/35 text-xs font-semibold text-emerald-300 flex items-center gap-1.5 transition"
+                    className="h-9 px-2.5 rounded-xl bg-emerald-500/12 hover:bg-emerald-500/20 border border-emerald-400/35 text-xs font-semibold text-emerald-300 flex items-center gap-1.5 transition"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     <span>Загрузить мою программу</span>
@@ -562,7 +637,7 @@ export function WorkoutEntryForm({
           {draft.textMode ? (
             /* ─── Quick Text Input Mode ─── */
             <div className="space-y-3">
-              <div className="rounded-2xl bg-[#111827] border border-white/10 p-4 sm:p-5 space-y-3 shadow-lg shadow-black/20">
+              <div className="rounded-2xl bg-[#111827] border border-white/10 p-4 space-y-3 shadow-lg shadow-black/20">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="text-xs font-semibold text-slate-300">
                     Вставьте или введите тренировку текстом (1 упражнение = 1 строка):
@@ -683,10 +758,10 @@ export function WorkoutEntryForm({
               )}
             </div>
           ) : (
-            /* ─── Card-per-exercise list ─── */
-            <div className="flex flex-col gap-3">
+            /* ─── Compact 2-Column Grid of Exercise Cards ─── */
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
               {draft.exercises.length === 0 ? (
-                <div className="rounded-2xl bg-[#111827] border border-dashed border-white/15 p-8 text-center space-y-3">
+                <div className="xl:col-span-2 rounded-2xl bg-[#111827] border border-dashed border-white/15 p-8 text-center space-y-2.5">
                   <Dumbbell className="w-7 h-7 text-slate-500 mx-auto" />
                   <div className="space-y-1">
                     <p className="text-sm font-semibold text-slate-200">
@@ -702,6 +777,7 @@ export function WorkoutEntryForm({
                   const prog = programMap.get(ex.name.trim().toLowerCase());
                   const prev = previousMap.get(ex.name.trim().toLowerCase());
                   const isProgramExercise = Boolean(prog);
+                  const accent = getExerciseCategoryAccent(ex.name);
 
                   const currentSets = parseDraftSets(ex.sets);
                   const dp = checkDoubleProgression(currentSets, prog);
@@ -719,100 +795,85 @@ export function WorkoutEntryForm({
                     : `Прошлая тренировка: ${dpPrev?.reason ?? ''}. Нажми, чтобы прибавить +${weightStep} кг`;
 
                   const hasAnyFilled = currentSets.length > 0;
+                  const isAutofilled = autofilledExIdx === exIdx;
 
                   return (
                     <div
                       key={`${exIdx}-${isProgramExercise ? ex.name : 'custom'}`}
-                      className={`rounded-2xl border p-4 transition-all duration-200 ${
+                      className={`rounded-2xl border border-l-4 ${accent.borderLeft} p-3.5 flex flex-col justify-between gap-2.5 transition-all duration-200 ${
+                        isAutofilled ? 'animate-autofill' : ''
+                      } ${
                         showBadge
-                          ? 'bg-gradient-to-br from-emerald-500/[0.08] via-[#111827] to-[#111827] border-emerald-400/35 hover:border-emerald-400/55 shadow-lg shadow-emerald-950/20'
+                          ? 'bg-gradient-to-br from-emerald-500/[0.08] via-[#111827] to-[#111827] border-emerald-400/35 hover:border-emerald-400/55 shadow-md shadow-emerald-950/20'
                           : hasAnyFilled
-                          ? 'bg-[#111827] border-blue-400/30 hover:border-blue-400/45 shadow-md shadow-black/20'
+                          ? 'bg-[#111827] border-blue-400/30 hover:border-blue-400/45 shadow-sm shadow-black/20'
                           : 'bg-[#111827] border-white/10 hover:border-white/20 hover:bg-[#141c2e]'
                       }`}
                     >
-                      {/* Top row: Exercise title + colored pill below + Previous badge on right */}
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start gap-2">
-                            <span className="mt-1 text-[11px] font-mono font-semibold text-slate-500 select-none shrink-0">
+                      {/* Top: Title + Category/Target pills */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                            <span className="mt-0.5 text-[11px] font-mono font-semibold text-slate-500 select-none shrink-0">
                               {String(exIdx + 1).padStart(2, '0')}
                             </span>
 
                             {isProgramExercise ? (
-                              <h3 className="text-base font-semibold text-white leading-snug tracking-tight">
+                              <h3 className="text-[15px] font-semibold text-white leading-snug tracking-tight">
                                 {ex.name}
                               </h3>
                             ) : (
-                              <div className="flex items-center gap-1.5 flex-1">
+                              <div className="flex items-center gap-1 flex-1 min-w-0">
                                 <input
                                   type="text"
                                   value={ex.name}
                                   onChange={(e) => updateExerciseName(exIdx, e.target.value)}
                                   placeholder="Название упражнения..."
-                                  className="flex-1 h-9 px-3 rounded-xl bg-[#0b0f19] border border-white/10 text-sm font-semibold text-white placeholder:text-slate-600 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 transition"
+                                  className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-slate-900/90 border border-slate-700/80 text-xs font-semibold text-white placeholder:text-slate-500 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 transition"
                                 />
                                 <button
                                   type="button"
                                   onClick={() => removeCustomExercise(exIdx)}
                                   title="Удалить упражнение из записи"
-                                  className="w-8 h-8 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 flex items-center justify-center transition"
+                                  className="w-7 h-7 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 flex items-center justify-center shrink-0 transition"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             )}
                           </div>
 
-                          {/* Colored pills cleanly below the name */}
-                          {(prog || showBadge) && (
-                            <div className="mt-2 pl-6 flex flex-wrap items-center gap-1.5">
-                              {prog && (
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-blue-500/12 border border-blue-400/25 text-[11px] font-semibold text-blue-300 tabular-nums">
-                                  {prog.targetSets} × {prog.targetRepMin}-{prog.targetRepMax} повт.
-                                </span>
-                              )}
-                              {showBadge && (
-                                <button
-                                  type="button"
-                                  onClick={() => bumpRowWeight(exIdx)}
-                                  title={badgeTitle}
-                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-[11px] font-bold text-emerald-300 shadow-sm shadow-emerald-500/10 active:scale-95 transition"
-                                >
-                                  <TrendingUp className="w-3 h-3" />
-                                  <span>+ Вес (+{weightStep} кг)</span>
-                                </button>
-                              )}
-                            </div>
+                          {showBadge && (
+                            <button
+                              type="button"
+                              onClick={() => bumpRowWeight(exIdx)}
+                              title={badgeTitle}
+                              className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/45 text-[10px] font-bold text-emerald-300 shadow-sm active:scale-95 transition"
+                            >
+                              <TrendingUp className="w-3 h-3" />
+                              <span>+ Вес</span>
+                            </button>
                           )}
                         </div>
 
-                        {/* Right: Previous workout badge */}
-                        <div className="pl-6 sm:pl-0 shrink-0">
-                          {prev ? (
-                            <button
-                              type="button"
-                              onClick={() => applyPreviousToRow(exIdx, prev)}
-                              title="Нажми, чтобы подставить прошлый результат в эту карточку"
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#0b0f19] hover:bg-[#0e1525] border border-white/10 hover:border-white/25 text-[11px] transition group"
-                            >
-                              <History className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-400 transition shrink-0" />
-                              <span className="text-slate-400">Прошлая:</span>
-                              <span className="font-mono font-semibold text-slate-200 tabular-nums">
-                                {formatSetsCompact(prev)}
-                              </span>
-                            </button>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#0b0f19]/60 border border-white/5 text-[11px] text-slate-500">
-                              <History className="w-3 h-3 text-slate-600 shrink-0" />
-                              <span>Нет прошлых</span>
+                        {/* Category & Target Range Pills */}
+                        <div className="flex flex-wrap items-center gap-1.5 pl-5">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${accent.pill}`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${accent.dot}`} />
+                            {accent.label}
+                          </span>
+                          {prog && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-900/90 border border-slate-700/80 text-[10px] font-semibold text-slate-300 tabular-nums">
+                              {prog.targetSets} × {prog.targetRepMin}-{prog.targetRepMax} повт.
                             </span>
                           )}
                         </div>
                       </div>
 
-                      {/* Bottom row: Set cells [Weight] × [Reps] + Add Set */}
-                      <div className="mt-3.5 pl-0 sm:pl-6 flex flex-wrap items-center gap-2">
+                      {/* Middle: Compact contrast set pills [kg × reps] + circular '+' */}
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {ex.sets.map((s, sIdx) => {
                           const prevSet = prev?.[sIdx] ?? prev?.[prev.length - 1];
                           const repsPlaceholder = prevSet
@@ -822,18 +883,20 @@ export function WorkoutEntryForm({
                             : 'повт';
                           const hasReps = (parseInt(s.reps.trim(), 10) || 0) > 0;
 
-                          const cellClasses = hasReps
+                          const cellClasses = isAutofilled
+                            ? 'bg-blue-500/20 border-blue-400/70 ring-2 ring-blue-400/35'
+                            : hasReps
                             ? showBadge
-                              ? 'bg-emerald-500/[0.12] border-emerald-400/50 focus-within:ring-2 focus-within:ring-emerald-400/45 focus-within:border-emerald-400'
-                              : 'bg-blue-500/[0.12] border-blue-400/50 focus-within:ring-2 focus-within:ring-blue-400/45 focus-within:border-blue-400'
+                              ? 'bg-emerald-500/15 border-emerald-400/55 focus-within:ring-2 focus-within:ring-emerald-400/45 focus-within:border-emerald-400'
+                              : 'bg-blue-500/15 border-blue-400/55 focus-within:ring-2 focus-within:ring-blue-400/45 focus-within:border-blue-400'
                             : showBadge
-                            ? 'bg-[#0b0f19] border-white/10 hover:border-emerald-400/35 focus-within:ring-2 focus-within:ring-emerald-400/40 focus-within:border-emerald-400'
-                            : 'bg-[#0b0f19] border-white/10 hover:border-white/20 focus-within:ring-2 focus-within:ring-blue-500/40 focus-within:border-blue-400';
+                            ? 'bg-slate-900/90 border-slate-700/80 hover:border-emerald-400/45 focus-within:ring-2 focus-within:ring-emerald-400/40 focus-within:border-emerald-400'
+                            : 'bg-slate-900/90 border-slate-700/80 hover:border-slate-500/80 focus-within:ring-2 focus-within:ring-blue-500/40 focus-within:border-blue-400';
 
                           return (
                             <div key={sIdx} className="flex items-center group animate-set-pop">
                               <div
-                                className={`flex items-center h-10 rounded-xl border transition-all duration-150 ${cellClasses}`}
+                                className={`flex items-center h-9 rounded-xl border transition-all duration-150 ${cellClasses}`}
                               >
                                 <input
                                   type="text"
@@ -842,9 +905,9 @@ export function WorkoutEntryForm({
                                   onChange={(e) => updateSet(exIdx, sIdx, 'weight', e.target.value)}
                                   placeholder={prevSet ? String(prevSet.weight) : 'кг'}
                                   aria-label={`${ex.name || 'Упражнение'}, подход ${sIdx + 1}, вес`}
-                                  className="w-[56px] h-full px-1.5 bg-transparent text-center text-sm font-bold text-white outline-none tabular-nums placeholder:text-slate-600"
+                                  className="w-[46px] h-full px-1 bg-transparent text-center text-xs sm:text-[13px] font-bold text-white outline-none tabular-nums placeholder:text-slate-500"
                                 />
-                                <span className="text-xs font-semibold text-slate-500 select-none">
+                                <span className="text-[11px] font-semibold text-slate-500 select-none">
                                   ×
                                 </span>
                                 <input
@@ -854,7 +917,7 @@ export function WorkoutEntryForm({
                                   onChange={(e) => updateSet(exIdx, sIdx, 'reps', e.target.value)}
                                   placeholder={repsPlaceholder}
                                   aria-label={`${ex.name || 'Упражнение'}, подход ${sIdx + 1}, повторения`}
-                                  className="w-[50px] h-full px-1.5 bg-transparent text-center text-sm font-bold text-white outline-none tabular-nums placeholder:text-slate-600"
+                                  className="w-[40px] h-full px-1 bg-transparent text-center text-xs sm:text-[13px] font-bold text-white outline-none tabular-nums placeholder:text-slate-500"
                                 />
                               </div>
 
@@ -862,10 +925,10 @@ export function WorkoutEntryForm({
                                 <button
                                   type="button"
                                   onClick={() => removeSet(exIdx, sIdx)}
-                                  className="ml-0.5 w-5 h-7 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition flex items-center justify-center"
+                                  className="ml-0.5 w-4 h-6 rounded text-slate-600 hover:text-rose-400 opacity-50 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition flex items-center justify-center"
                                   aria-label="Удалить подход"
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <X className="w-3 h-3" />
                                 </button>
                               )}
                             </div>
@@ -875,13 +938,44 @@ export function WorkoutEntryForm({
                         <button
                           type="button"
                           onClick={() => addSet(exIdx)}
-                          title="Добавить дополнительный подход"
+                          title="Добавить подход"
                           aria-label="Добавить подход"
-                          className="h-10 w-10 rounded-xl bg-[#0b0f19] border border-dashed border-white/15 text-slate-400 hover:text-blue-300 hover:border-blue-400/60 hover:bg-blue-500/10 active:scale-95 flex items-center justify-center transition"
+                          className="h-9 w-9 rounded-full bg-slate-900/90 border border-dashed border-slate-600/80 text-slate-300 hover:text-blue-300 hover:border-blue-400 hover:bg-blue-500/15 active:scale-90 flex items-center justify-center shrink-0 transition"
                         >
                           <Plus className="w-4 h-4" />
                         </button>
                       </div>
+
+                      {/* Bottom: One-click clickable Previous workout badge */}
+                      {prev && (
+                        <button
+                          type="button"
+                          onClick={() => applyPreviousToRow(exIdx, prev)}
+                          title="Нажмите, чтобы подставить прошлые веса и повторения"
+                          className={`w-full px-2.5 py-1.5 rounded-xl border text-[11px] flex items-center justify-between gap-2 transition text-left group ${
+                            isAutofilled
+                              ? 'bg-blue-500/15 border-blue-400/50 text-blue-200'
+                              : 'bg-slate-900/80 hover:bg-blue-500/10 border-slate-700/70 hover:border-blue-400/40 text-slate-400'
+                          }`}
+                        >
+                          <span className="inline-flex items-center gap-1.5 min-w-0">
+                            {isAutofilled ? (
+                              <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            ) : (
+                              <History className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-400 shrink-0 transition" />
+                            )}
+                            <span className="shrink-0">
+                              {isAutofilled ? 'Подставлено:' : 'Прошлая:'}
+                            </span>
+                            <span className="font-mono font-semibold text-slate-200 truncate tabular-nums">
+                              {formatSetsCompact(prev)}
+                            </span>
+                          </span>
+                          <span className="text-[10px] font-semibold text-blue-400/80 group-hover:text-blue-300 shrink-0">
+                            {isAutofilled ? '✓' : 'Вставить'}
+                          </span>
+                        </button>
+                      )}
                     </div>
                   );
                 })
@@ -891,7 +985,7 @@ export function WorkoutEntryForm({
               <button
                 type="button"
                 onClick={addCustomExercise}
-                className="w-full h-11 rounded-2xl bg-[#111827] hover:bg-[#151e30] border border-dashed border-white/15 hover:border-blue-400/40 text-xs font-semibold text-slate-300 hover:text-blue-300 inline-flex items-center justify-center gap-2 transition"
+                className="xl:col-span-2 w-full h-10 rounded-2xl bg-[#111827] hover:bg-[#151e30] border border-dashed border-white/15 hover:border-blue-400/40 text-xs font-semibold text-slate-300 hover:text-blue-300 inline-flex items-center justify-center gap-2 transition"
               >
                 <Plus className="w-4 h-4" />
                 <span>Добавить дополнительное упражнение</span>
@@ -918,7 +1012,7 @@ export function WorkoutEntryForm({
         {/* ─── Right Sidebar (30%): Live Summary & Last Workout ─── */}
         <aside className="lg:sticky lg:top-20 space-y-4">
           {/* Live Current Workout Summary */}
-          <div className="rounded-2xl bg-[#111827] border border-white/10 p-4 sm:p-5 space-y-4 shadow-xl shadow-black/25">
+          <div className="rounded-2xl bg-[#111827] border border-white/10 p-4 space-y-3.5 shadow-xl shadow-black/25">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-blue-500/15 border border-blue-400/25 flex items-center justify-center">
@@ -940,13 +1034,14 @@ export function WorkoutEntryForm({
                 />
               </div>
               <p className="text-[11px] text-slate-400">
-                Выполнено упражнений: <span className="text-slate-200 font-semibold">{liveSummary.progressPct}%</span>
+                Выполнено упражнений:{' '}
+                <span className="text-slate-200 font-semibold">{liveSummary.progressPct}%</span>
               </p>
             </div>
 
             {/* Real-time stats */}
             <div className="grid grid-cols-2 gap-2.5">
-              <div className="rounded-xl bg-[#0b0f19] border border-white/10 p-3 space-y-1">
+              <div className="rounded-xl bg-[#0b0f19] border border-white/10 p-3 space-y-0.5">
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Подходы</span>
                   <Layers className="w-3.5 h-3.5 text-blue-400" />
@@ -956,7 +1051,7 @@ export function WorkoutEntryForm({
                 </p>
               </div>
 
-              <div className="rounded-xl bg-[#0b0f19] border border-white/10 p-3 space-y-1">
+              <div className="rounded-xl bg-[#0b0f19] border border-white/10 p-3 space-y-0.5">
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Тоннаж</span>
                   <Flame className="w-3.5 h-3.5 text-amber-400" />
@@ -1000,7 +1095,7 @@ export function WorkoutEntryForm({
                 <p className="text-[11px] text-slate-400 leading-relaxed">
                   {liveSummary.completedSets > 0
                     ? 'Продолжайте добирать повторения до верхней границы диапазона.'
-                    : 'Введите повторения — здесь появятся тоннаж и сигналы на повышение веса.'}
+                    : 'Введите повторения или нажмите «Вставить» на прошлой записи.'}
                 </p>
               )}
             </div>
@@ -1022,7 +1117,7 @@ export function WorkoutEntryForm({
           </div>
 
           {/* Last Workout Reference Mini-Card */}
-          <div className="rounded-2xl bg-[#111827] border border-white/10 p-4 sm:p-5 space-y-3 shadow-lg shadow-black/20">
+          <div className="rounded-2xl bg-[#111827] border border-white/10 p-4 space-y-3 shadow-lg shadow-black/20">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
@@ -1038,7 +1133,7 @@ export function WorkoutEntryForm({
             </div>
 
             {lastWorkout ? (
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 <div className="text-xs text-slate-400 capitalize flex items-center justify-between">
                   <span>{formatFullDate(lastWorkout.date)}</span>
                   <span className="text-[11px] text-slate-500">
