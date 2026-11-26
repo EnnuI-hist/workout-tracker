@@ -1,5 +1,12 @@
-import type { AppDatabase, AppSettings, ProgramExercise, WorkoutDraftState, WorkoutEntry } from '../types/workout.ts';
-import { DEFAULT_PROGRAM } from './defaultProgram.ts';
+import type {
+  AppDatabase,
+  AppSettings,
+  ProgramExercise,
+  WorkoutDraftState,
+  WorkoutEntry,
+  WorkoutProgram,
+} from '../types/workout.ts';
+import { generateId } from './calculations.ts';
 
 const DB_KEY = 'ironpulse_gym_db_v2';
 const DRAFT_KEY = 'ironpulse_entry_draft_v2';
@@ -9,7 +16,9 @@ export const DEFAULT_SETTINGS: AppSettings = { weightStep: 2.5 };
 export function createEmptyDatabase(): AppDatabase {
   return {
     version: 2,
-    program: DEFAULT_PROGRAM.map((p) => ({ ...p })),
+    programs: [],
+    activeProgramId: null,
+    program: [],
     entries: [],
     settings: { ...DEFAULT_SETTINGS },
   };
@@ -82,20 +91,27 @@ export function parseImportedJson(text: string): AppDatabase {
   const parsed: unknown = JSON.parse(text);
   if (!parsed || typeof parsed !== 'object') throw new Error('Некорректный JSON');
   const candidate = parsed as Partial<AppDatabase>;
-  if (!Array.isArray(candidate.program) && !Array.isArray(candidate.entries)) {
-    throw new Error('JSON не содержит полей program или entries.');
+  if (
+    !Array.isArray(candidate.programs) &&
+    !Array.isArray(candidate.program) &&
+    !Array.isArray(candidate.entries)
+  ) {
+    throw new Error('JSON не содержит полей programs, program или entries.');
   }
   return normalizeDb(candidate);
 }
 
-function normalizeProgram(rawProgram: unknown): ProgramExercise[] {
-  if (!Array.isArray(rawProgram) || rawProgram.length === 0) {
-    return DEFAULT_PROGRAM.map((p) => ({ ...p }));
-  }
-  const cleaned = rawProgram
+function normalizeExercises(rawProgram: unknown): ProgramExercise[] {
+  if (!Array.isArray(rawProgram)) return [];
+  return rawProgram
     .filter(
       (p): p is ProgramExercise =>
-        Boolean(p && typeof p === 'object' && typeof (p as ProgramExercise).name === 'string' && (p as ProgramExercise).name.trim().length > 0)
+        Boolean(
+          p &&
+            typeof p === 'object' &&
+            typeof (p as ProgramExercise).name === 'string' &&
+            (p as ProgramExercise).name.trim().length > 0
+        )
     )
     .map((p) => ({
       name: p.name.trim(),
@@ -103,11 +119,60 @@ function normalizeProgram(rawProgram: unknown): ProgramExercise[] {
       targetRepMin: Math.max(1, Math.round(Number(p.targetRepMin) || 6)),
       targetRepMax: Math.max(1, Math.round(Number(p.targetRepMax) || 12)),
     }));
-  return cleaned.length > 0 ? cleaned : DEFAULT_PROGRAM.map((p) => ({ ...p }));
+}
+
+function normalizePrograms(raw: Partial<AppDatabase>): {
+  programs: WorkoutProgram[];
+  activeProgramId: string | null;
+  program: ProgramExercise[];
+} {
+  let programs: WorkoutProgram[] = [];
+
+  if (Array.isArray(raw.programs)) {
+    programs = raw.programs
+      .filter((p): p is WorkoutProgram => Boolean(p && typeof p === 'object'))
+      .map((p, idx) => ({
+        id: typeof p.id === 'string' && p.id.trim() ? p.id : generateId(),
+        name:
+          typeof p.name === 'string' && p.name.trim()
+            ? p.name.trim()
+            : `Программа ${idx + 1}`,
+        exercises: normalizeExercises(p.exercises),
+      }));
+  } else if (Array.isArray(raw.program) && raw.program.length > 0) {
+    const legacyExercises = normalizeExercises(raw.program);
+    if (legacyExercises.length > 0) {
+      programs = [
+        {
+          id: generateId(),
+          name: 'Моя программа',
+          exercises: legacyExercises,
+        },
+      ];
+    }
+  }
+
+  let activeProgramId: string | null = null;
+  if (
+    typeof raw.activeProgramId === 'string' &&
+    programs.some((p) => p.id === raw.activeProgramId)
+  ) {
+    activeProgramId = raw.activeProgramId;
+  } else if (programs.length > 0) {
+    activeProgramId = programs[0].id;
+  }
+
+  const active = programs.find((p) => p.id === activeProgramId) ?? null;
+
+  return {
+    programs,
+    activeProgramId,
+    program: active ? active.exercises : [],
+  };
 }
 
 function normalizeDb(raw: Partial<AppDatabase>): AppDatabase {
-  const program = normalizeProgram(raw.program);
+  const { programs, activeProgramId, program } = normalizePrograms(raw);
 
   const entries: WorkoutEntry[] = Array.isArray(raw.entries)
     ? raw.entries
@@ -147,5 +212,5 @@ function normalizeDb(raw: Partial<AppDatabase>): AppDatabase {
     weightStep: ws === 1.25 || ws === 2.5 ? ws : DEFAULT_SETTINGS.weightStep,
   };
 
-  return { version: 2, program, entries, settings };
+  return { version: 2, programs, activeProgramId, program, entries, settings };
 }

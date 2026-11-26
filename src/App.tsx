@@ -17,8 +17,9 @@ import type {
   ProgramExercise,
   WorkoutDraftState,
   WorkoutEntry,
+  WorkoutProgram,
 } from './types/workout.ts';
-import { createDraftExercises, getTodayISO } from './utils/calculations.ts';
+import { createDraftExercises, generateId, getTodayISO } from './utils/calculations.ts';
 import { DEFAULT_PROGRAM } from './utils/defaultProgram.ts';
 import {
   loadDatabase,
@@ -37,15 +38,38 @@ function buildFreshDraft(program: ProgramExercise[], entries: WorkoutEntry[]): W
   };
 }
 
+function syncDraftExercises(
+  prevDraft: WorkoutDraftState,
+  nextProgram: ProgramExercise[],
+  entries: WorkoutEntry[]
+): WorkoutDraftState {
+  const existingByName = new Map(
+    prevDraft.exercises
+      .filter((ex) => ex.sets.some((s) => s.reps.trim().length > 0))
+      .map((ex) => [ex.name.trim().toLowerCase(), ex])
+  );
+  const fresh = createDraftExercises(nextProgram, entries);
+  const merged = fresh.map((row) => existingByName.get(row.name.trim().toLowerCase()) ?? row);
+  return {
+    ...prevDraft,
+    exercises: merged,
+  };
+}
+
 export function App() {
   const [db, setDb] = useState<AppDatabase>(() => loadDatabase());
   const [draft, setDraft] = useState<WorkoutDraftState>(() => {
     const saved = loadEntryDraft();
-    if (saved && saved.exercises.length > 0) {
-      return {
-        ...saved,
-        date: saved.date || getTodayISO(),
-      };
+    if (saved) {
+      const hasEnteredReps = saved.exercises.some((ex) =>
+        ex.sets.some((s) => s.reps.trim().length > 0)
+      );
+      if (hasEnteredReps || saved.rawText.trim().length > 0 || db.program.length > 0) {
+        return {
+          ...saved,
+          date: saved.date || getTodayISO(),
+        };
+      }
     }
     return buildFreshDraft(db.program, db.entries);
   });
@@ -116,32 +140,139 @@ export function App() {
     [showToast]
   );
 
-  const handleUpdateProgram = useCallback(
-    (nextProgram: ProgramExercise[]) => {
+  const handleSelectProgram = useCallback(
+    (programId: string) => {
+      const target = db.programs.find((p) => p.id === programId);
+      if (!target) return;
       setDb((prev) => ({
         ...prev,
-        program: nextProgram,
+        activeProgramId: target.id,
+        program: target.exercises,
       }));
       setDraft((prevDraft) => ({
         ...prevDraft,
-        exercises: createDraftExercises(nextProgram, db.entries),
+        exercises: createDraftExercises(target.exercises, db.entries),
       }));
     },
-    [db.entries]
+    [db.entries, db.programs]
   );
 
-  const handleResetProgram = useCallback(() => {
-    const defaultProg = DEFAULT_PROGRAM.map((p) => ({ ...p }));
+  const handleCreateProgram = useCallback((name: string) => {
+    const newProg: WorkoutProgram = {
+      id: generateId(),
+      name: name.trim() || 'Новая программа',
+      exercises: [],
+    };
     setDb((prev) => ({
       ...prev,
-      program: defaultProg,
+      programs: [...prev.programs, newProg],
+      activeProgramId: newProg.id,
+      program: [],
     }));
     setDraft((prevDraft) => ({
       ...prevDraft,
-      exercises: createDraftExercises(defaultProg, db.entries),
+      exercises: [],
+    }));
+  }, []);
+
+  const handleRenameProgram = useCallback((programId: string, name: string) => {
+    setDb((prev) => ({
+      ...prev,
+      programs: prev.programs.map((p) => (p.id === programId ? { ...p, name } : p)),
+    }));
+  }, []);
+
+  const handleDeleteProgram = useCallback(
+    (programId: string) => {
+      const remaining = db.programs.filter((p) => p.id !== programId);
+      const nextActive =
+        db.activeProgramId === programId
+          ? remaining[0] ?? null
+          : remaining.find((p) => p.id === db.activeProgramId) ?? remaining[0] ?? null;
+      const nextExercises = nextActive ? nextActive.exercises : [];
+
+      setDb((prev) => ({
+        ...prev,
+        programs: remaining,
+        activeProgramId: nextActive ? nextActive.id : null,
+        program: nextExercises,
+      }));
+      setDraft((prevDraft) => ({
+        ...prevDraft,
+        exercises: createDraftExercises(nextExercises, db.entries),
+      }));
+    },
+    [db.activeProgramId, db.entries, db.programs]
+  );
+
+  const handleUpdateProgram = useCallback(
+    (nextExercises: ProgramExercise[]) => {
+      const currentActiveId = db.activeProgramId ?? db.programs[0]?.id ?? null;
+
+      if (!currentActiveId) {
+        const created: WorkoutProgram = {
+          id: generateId(),
+          name: 'Моя программа',
+          exercises: nextExercises,
+        };
+        setDb((prev) => ({
+          ...prev,
+          programs: [created],
+          activeProgramId: created.id,
+          program: nextExercises,
+        }));
+      } else {
+        setDb((prev) => ({
+          ...prev,
+          programs: prev.programs.map((p) =>
+            p.id === currentActiveId ? { ...p, exercises: nextExercises } : p
+          ),
+          activeProgramId: currentActiveId,
+          program: nextExercises,
+        }));
+      }
+
+      setDraft((prevDraft) => syncDraftExercises(prevDraft, nextExercises, db.entries));
+    },
+    [db.activeProgramId, db.entries, db.programs]
+  );
+
+  const handleResetProgram = useCallback(() => {
+    const defaultExercises = DEFAULT_PROGRAM.map((p) => ({ ...p }));
+    const defaultName = 'Full-Body (13 упр.)';
+    const existingDefault = db.programs.find(
+      (p) => p.name.trim().toLowerCase() === defaultName.toLowerCase()
+    );
+
+    if (existingDefault) {
+      setDb((prev) => ({
+        ...prev,
+        programs: prev.programs.map((p) =>
+          p.id === existingDefault.id ? { ...p, exercises: defaultExercises } : p
+        ),
+        activeProgramId: existingDefault.id,
+        program: defaultExercises,
+      }));
+    } else {
+      const created: WorkoutProgram = {
+        id: generateId(),
+        name: defaultName,
+        exercises: defaultExercises,
+      };
+      setDb((prev) => ({
+        ...prev,
+        programs: [...prev.programs, created],
+        activeProgramId: created.id,
+        program: defaultExercises,
+      }));
+    }
+
+    setDraft((prevDraft) => ({
+      ...prevDraft,
+      exercises: createDraftExercises(defaultExercises, db.entries),
     }));
     showToast('Загружена базовая программа (13 упр. Full-Body).');
-  }, [db.entries, showToast]);
+  }, [db.entries, db.programs, showToast]);
 
   const handleClearEntries = useCallback(() => {
     setDb((prev) => ({
@@ -314,6 +445,10 @@ export function App() {
         onClose={() => setIsDataModalOpen(false)}
         db={db}
         onImportDatabase={handleImportDatabase}
+        onSelectProgram={handleSelectProgram}
+        onCreateProgram={handleCreateProgram}
+        onRenameProgram={handleRenameProgram}
+        onDeleteProgram={handleDeleteProgram}
         onUpdateProgram={handleUpdateProgram}
         onResetProgram={handleResetProgram}
         onClearEntries={handleClearEntries}

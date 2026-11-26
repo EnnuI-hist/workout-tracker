@@ -4,6 +4,7 @@ import {
   ChevronUp,
   Database,
   Download,
+  FolderPlus,
   Plus,
   RefreshCw,
   Trash2,
@@ -19,10 +20,61 @@ interface DataModalProps {
   onClose: () => void;
   db: AppDatabase;
   onImportDatabase: (nextDb: AppDatabase) => void;
+  onSelectProgram: (programId: string) => void;
+  onCreateProgram: (name: string) => void;
+  onRenameProgram: (programId: string, name: string) => void;
+  onDeleteProgram: (programId: string) => void;
   onUpdateProgram: (nextProgram: ProgramExercise[]) => void;
   onResetProgram: () => void;
   onClearEntries: () => void;
   onChangeWeightStep: (step: 1.25 | 2.5) => void;
+}
+
+function NumericField({
+  value,
+  min = 1,
+  max = 100,
+  title,
+  onCommit,
+}: {
+  value: number;
+  min?: number;
+  max?: number;
+  title: string;
+  onCommit: (next: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={draft ?? String(value)}
+      title={title}
+      onFocus={(e) => {
+        setDraft(String(value));
+        e.target.select();
+      }}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setDraft(raw);
+        const parsed = parseInt(raw, 10);
+        if (!Number.isNaN(parsed) && parsed >= min && parsed <= max) {
+          onCommit(parsed);
+        }
+      }}
+      onBlur={() => {
+        if (draft !== null) {
+          const parsed = parseInt(draft, 10);
+          if (!Number.isNaN(parsed)) {
+            onCommit(Math.min(max, Math.max(min, parsed)));
+          }
+          setDraft(null);
+        }
+      }}
+      className="w-10 h-8 px-1 rounded-lg bg-[#141822] border border-slate-800 text-center text-xs text-white tabular-nums outline-none focus:border-blue-500"
+    />
+  );
 }
 
 export function DataModal({
@@ -30,6 +82,10 @@ export function DataModal({
   onClose,
   db,
   onImportDatabase,
+  onSelectProgram,
+  onCreateProgram,
+  onRenameProgram,
+  onDeleteProgram,
   onUpdateProgram,
   onResetProgram,
   onClearEntries,
@@ -41,9 +97,14 @@ export function DataModal({
     text: string;
   } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
-  const [showProgramEditor, setShowProgramEditor] = useState(false);
+  const [showProgramEditor, setShowProgramEditor] = useState(true);
+  const [newProgramName, setNewProgramName] = useState('');
 
   if (!isOpen) return null;
+
+  const activeProgram =
+    db.programs.find((p) => p.id === db.activeProgramId) ?? db.programs[0] ?? null;
+  const exercises = activeProgram ? activeProgram.exercises : db.program;
 
   const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -55,7 +116,7 @@ export function DataModal({
       onImportDatabase(parsedDb);
       setStatusMessage({
         type: 'success',
-        text: `База импортирована: ${parsedDb.entries.length} трен., ${parsedDb.program.length} упр. в программе.`,
+        text: `База импортирована: ${parsedDb.entries.length} трен., ${parsedDb.programs.length} прогр.`,
       });
     } catch (err) {
       setStatusMessage({
@@ -67,24 +128,35 @@ export function DataModal({
     }
   };
 
-  const updateProgramItem = (
-    idx: number,
-    patch: Partial<ProgramExercise>
-  ) => {
-    const next = db.program.map((p, i) => (i === idx ? { ...p, ...patch } : p));
+  const handleCreateProgramClick = () => {
+    const label = newProgramName.trim() || `Программа ${db.programs.length + 1}`;
+    onCreateProgram(label);
+    setNewProgramName('');
+    setShowProgramEditor(true);
+    setStatusMessage({
+      type: 'success',
+      text: `Создана программа «${label}». Добавьте упражнения ниже.`,
+    });
+  };
+
+  const updateProgramItem = (idx: number, patch: Partial<ProgramExercise>) => {
+    const next = exercises.map((p, i) => (i === idx ? { ...p, ...patch } : p));
     onUpdateProgram(next);
   };
 
   const removeProgramItem = (idx: number) => {
-    if (db.program.length <= 1) return;
-    onUpdateProgram(db.program.filter((_, i) => i !== idx));
+    onUpdateProgram(exercises.filter((_, i) => i !== idx));
   };
 
   const addProgramItem = () => {
     onUpdateProgram([
-      ...db.program,
-      { name: 'Новое упражнение', targetSets: 3, targetRepMin: 8, targetRepMax: 12 },
+      ...exercises,
+      { name: '', targetSets: 3, targetRepMin: 8, targetRepMax: 12 },
     ]);
+  };
+
+  const clearProgramExercises = () => {
+    onUpdateProgram([]);
   };
 
   return (
@@ -116,40 +188,123 @@ export function DataModal({
               </p>
             </div>
             <div className="rounded-xl bg-[#0e121b] border border-slate-800 p-3">
-              <p className="text-xs text-slate-400">Упражнений в программе</p>
+              <p className="text-xs text-slate-400">Упражнений в активной</p>
               <p className="text-xl font-bold text-white tabular-nums mt-0.5">
-                {db.program.length}
+                {exercises.length}
               </p>
             </div>
           </div>
 
           {/* Program section */}
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Программа тренировок
+                Программы тренировок ({db.programs.length})
               </p>
+              {activeProgram && (
+                <button
+                  type="button"
+                  onClick={() => setShowProgramEditor((v) => !v)}
+                  className="text-xs font-semibold text-blue-400 hover:text-blue-300 inline-flex items-center gap-1"
+                >
+                  <span>{showProgramEditor ? 'Скрыть список' : 'Редактировать список'}</span>
+                  {showProgramEditor ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              )}
+            </div>
+
+            {/* Create new program */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newProgramName}
+                onChange={(e) => setNewProgramName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleCreateProgramClick();
+                  }
+                }}
+                placeholder="Название новой программы (например, Верх / Низ)..."
+                className="flex-1 h-10 px-3 rounded-xl bg-[#0e121b] border border-slate-800 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-500"
+              />
               <button
                 type="button"
-                onClick={() => setShowProgramEditor((v) => !v)}
-                className="text-xs font-semibold text-blue-400 hover:text-blue-300 inline-flex items-center gap-1"
+                onClick={handleCreateProgramClick}
+                className="h-10 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 transition"
               >
-                <span>{showProgramEditor ? 'Скрыть список' : 'Редактировать список'}</span>
-                {showProgramEditor ? (
-                  <ChevronUp className="w-3.5 h-3.5" />
-                ) : (
-                  <ChevronDown className="w-3.5 h-3.5" />
-                )}
+                <FolderPlus className="w-3.5 h-3.5" />
+                <span>Создать</span>
               </button>
             </div>
+
+            {/* Program switcher pills */}
+            {db.programs.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {db.programs.map((prog) => {
+                  const isActive = activeProgram?.id === prog.id;
+                  return (
+                    <button
+                      key={prog.id}
+                      type="button"
+                      onClick={() => onSelectProgram(prog.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${
+                        isActive
+                          ? 'bg-blue-600/20 border-blue-500 text-blue-200'
+                          : 'bg-[#0e121b] border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                      }`}
+                    >
+                      <span>{prog.name || 'Без названия'}</span>
+                      <span className="text-[10px] opacity-70 tabular-nums">
+                        ({prog.exercises.length})
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Active program rename + delete */}
+            {activeProgram && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={activeProgram.name}
+                  onChange={(e) => onRenameProgram(activeProgram.id, e.target.value)}
+                  placeholder="Название программы..."
+                  aria-label="Название активной программы"
+                  className="flex-1 h-9 px-3 rounded-xl bg-[#0e121b] border border-slate-800 text-xs font-semibold text-white outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDeleteProgram(activeProgram.id);
+                    setStatusMessage({
+                      type: 'success',
+                      text: `Программа «${activeProgram.name || 'Без названия'}» удалена.`,
+                    });
+                  }}
+                  title="Удалить эту программу"
+                  className="h-9 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-rose-300 text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 transition"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Удалить программу</span>
+                </button>
+              </div>
+            )}
 
             <button
               type="button"
               onClick={() => {
                 onResetProgram();
+                setShowProgramEditor(true);
                 setStatusMessage({
                   type: 'success',
-                  text: 'Загружена ваша базовая программа (13 упражнений Full-Body).',
+                  text: 'Загружена базовая программа (13 упражнений Full-Body).',
                 });
               }}
               className="w-full h-11 px-4 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/35 text-emerald-300 text-sm font-semibold flex items-center justify-center gap-2 transition"
@@ -158,84 +313,87 @@ export function DataModal({
               Загрузить мою программу (13 упр. Full-Body)
             </button>
 
-            {showProgramEditor && (
+            {/* Exercise list for active program */}
+            {activeProgram && showProgramEditor && (
               <div className="rounded-xl bg-[#0e121b] border border-slate-800 p-3 space-y-2">
-                {db.program.map((p, idx) => (
-                  <div
-                    key={idx}
-                    className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 pb-2 border-b border-slate-800/70 last:border-b-0 last:pb-0"
-                  >
-                    <span className="text-[11px] font-mono text-slate-600 w-5 text-right shrink-0">
-                      {idx + 1}.
-                    </span>
-                    <input
-                      type="text"
-                      value={p.name}
-                      onChange={(e) => updateProgramItem(idx, { name: e.target.value })}
-                      className="flex-1 min-w-[140px] h-8 px-2 rounded-lg bg-[#141822] border border-slate-800 text-xs text-white outline-none focus:border-blue-500"
-                    />
-                    <div className="flex items-center gap-1 shrink-0 text-[11px] text-slate-400">
+                {exercises.length === 0 ? (
+                  <p className="text-xs text-slate-500 text-center py-2">
+                    В этой программе пока нет упражнений.
+                  </p>
+                ) : (
+                  exercises.map((p, idx) => (
+                    <div
+                      key={`${activeProgram.id}-${idx}`}
+                      className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 pb-2 border-b border-slate-800/70 last:border-b-0 last:pb-0"
+                    >
+                      <span className="text-[11px] font-mono text-slate-600 w-5 text-right shrink-0">
+                        {idx + 1}.
+                      </span>
                       <input
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={p.targetSets}
-                        onChange={(e) =>
-                          updateProgramItem(idx, {
-                            targetSets: Math.max(1, parseInt(e.target.value, 10) || 1),
-                          })
-                        }
-                        title="Подходы"
-                        className="w-10 h-8 px-1 rounded-lg bg-[#141822] border border-slate-800 text-center text-xs text-white tabular-nums outline-none focus:border-blue-500"
+                        type="text"
+                        value={p.name}
+                        placeholder="Название упражнения..."
+                        onChange={(e) => updateProgramItem(idx, { name: e.target.value })}
+                        className="flex-1 min-w-[140px] h-8 px-2 rounded-lg bg-[#141822] border border-slate-800 text-xs text-white placeholder:text-slate-600 outline-none focus:border-blue-500"
                       />
-                      <span>×</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={p.targetRepMin}
-                        onChange={(e) =>
-                          updateProgramItem(idx, {
-                            targetRepMin: Math.max(1, parseInt(e.target.value, 10) || 1),
-                          })
-                        }
-                        title="Мин. повторений"
-                        className="w-10 h-8 px-1 rounded-lg bg-[#141822] border border-slate-800 text-center text-xs text-white tabular-nums outline-none focus:border-blue-500"
-                      />
-                      <span>-</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={p.targetRepMax}
-                        onChange={(e) =>
-                          updateProgramItem(idx, {
-                            targetRepMax: Math.max(1, parseInt(e.target.value, 10) || 1),
-                          })
-                        }
-                        title="Макс. повторений"
-                        className="w-10 h-8 px-1 rounded-lg bg-[#141822] border border-slate-800 text-center text-xs text-white tabular-nums outline-none focus:border-blue-500"
-                      />
-                      {db.program.length > 1 && (
+                      <div className="flex items-center gap-1 shrink-0 text-[11px] text-slate-400">
+                        <NumericField
+                          value={p.targetSets}
+                          min={1}
+                          max={20}
+                          title="Подходы"
+                          onCommit={(val) => updateProgramItem(idx, { targetSets: val })}
+                        />
+                        <span>×</span>
+                        <NumericField
+                          value={p.targetRepMin}
+                          min={1}
+                          max={100}
+                          title="Мин. повторений"
+                          onCommit={(val) => updateProgramItem(idx, { targetRepMin: val })}
+                        />
+                        <span>-</span>
+                        <NumericField
+                          value={p.targetRepMax}
+                          min={1}
+                          max={100}
+                          title="Макс. повторений"
+                          onCommit={(val) => updateProgramItem(idx, { targetRepMax: val })}
+                        />
                         <button
                           type="button"
                           onClick={() => removeProgramItem(idx)}
-                          className="w-7 h-8 rounded-lg text-slate-500 hover:text-rose-400 flex items-center justify-center"
+                          title="Удалить упражнение"
+                          aria-label="Удалить упражнение"
+                          className="w-7 h-8 rounded-lg text-slate-500 hover:text-rose-400 flex items-center justify-center transition"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={addProgramItem}
-                  className="w-full h-9 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/30 text-blue-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Добавить упражнение в программу
-                </button>
+                  ))
+                )}
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={addProgramItem}
+                    className="flex-1 h-9 px-3 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/30 text-blue-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Добавить упражнение
+                  </button>
+                  {exercises.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearProgramExercises}
+                      className="h-9 px-3 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-rose-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Очистить список
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -330,7 +488,7 @@ export function DataModal({
               <div className="rounded-xl bg-rose-500/15 border border-rose-500/35 p-3 space-y-2">
                 <div className="flex items-center gap-2 text-xs text-rose-200 font-medium">
                   <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                  <span>Удалить все записи тренировок? Программа сохранится.</span>
+                  <span>Удалить все записи тренировок? Программы сохранятся.</span>
                 </div>
                 <div className="flex gap-2">
                   <button

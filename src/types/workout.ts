@@ -7,6 +7,12 @@ export interface ProgramExercise {
   targetRepMax: number;
 }
 
+export interface WorkoutProgram {
+  id: string;
+  name: string;
+  exercises: ProgramExercise[];
+}
+
 export interface SetEntry {
   weight: number;
   reps: number;
@@ -49,6 +55,8 @@ export interface AppSettings {
 
 export interface AppDatabase {
   version: number;
+  programs: WorkoutProgram[];
+  activeProgramId: string | null;
   program: ProgramExercise[];
   entries: WorkoutEntry[];
   settings: AppSettings;

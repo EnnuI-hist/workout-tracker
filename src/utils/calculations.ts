@@ -184,17 +184,19 @@ export function createDraftExercises(
   program: ProgramExercise[],
   entries: WorkoutEntry[]
 ): DraftExercise[] {
-  return program.map((p) => {
-    const prev = findPreviousPerformance(entries, p.name);
-    const sets = Array.from({ length: p.targetSets }, (_, i) => {
-      const prevSet = prev?.[i] ?? prev?.[prev.length - 1];
-      return {
-        weight: prevSet ? String(prevSet.weight) : '',
-        reps: '',
-      };
+  return program
+    .filter((p) => p.name.trim().length > 0)
+    .map((p) => {
+      const prev = findPreviousPerformance(entries, p.name);
+      const sets = Array.from({ length: p.targetSets }, (_, i) => {
+        const prevSet = prev?.[i] ?? prev?.[prev.length - 1];
+        return {
+          weight: prevSet ? String(prevSet.weight) : '',
+          reps: '',
+        };
+      });
+      return { name: p.name, sets };
     });
-    return { name: p.name, sets };
-  });
 }
 
 /* ─── Progression series for charts ─── */
